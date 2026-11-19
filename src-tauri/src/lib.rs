@@ -937,8 +937,19 @@ async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
         return Err("El instalador de Ollama terminó con error".into());
     }
 
-    // 3) Encenderlo y esperar a que responda
+    // 3) El instalador de Ollama abre su app de escritorio al terminar (pide iniciar sesión, ofrece
+    //    una terminal…) y eso confunde. La cerramos y TaskAI enciende solo el servidor, invisible.
     emit("start", None);
+    for _ in 0..30 {
+        if ollama_gui_running() {
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await; // que termine de abrir
+            let _ = kill_ollama();
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    // Tampoco queremos que esa ventana salga cada vez que se prende la compu: TaskAI enciende la IA al abrirse.
+    remove_ollama_autostart();
     if !ollama_running().await {
         spawn_ollama()?;
     }
@@ -950,6 +961,28 @@ async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
     Err("Ollama se instaló, pero no respondió. Ábrelo desde el menú Inicio y dale \"Revisar\".".into())
+}
+
+/// ¿Está abierta la app de escritorio de Ollama ("ollama app.exe")? Solo aplica a Windows.
+fn ollama_gui_running() -> bool {
+    if !cfg!(windows) {
+        return false;
+    }
+    let mut c = std::process::Command::new("tasklist");
+    c.args(["/FI", "IMAGENAME eq ollama app.exe", "/NH"]);
+    hide_window(&mut c);
+    c.output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase().contains("ollama app.exe"))
+        .unwrap_or(false)
+}
+
+/// Quita el acceso directo que el instalador de Ollama pone en "Inicio" de Windows
+/// (si no, su ventana se abre sola cada vez que se prende la compu).
+fn remove_ollama_autostart() {
+    if let Some(dir) = dirs::config_dir() {
+        let link = dir.join("Microsoft").join("Windows").join("Start Menu").join("Programs").join("Startup").join("Ollama.lnk");
+        let _ = fs::remove_file(link);
+    }
 }
 
 // ----- Encender y apagar la IA desde TaskAI -----
