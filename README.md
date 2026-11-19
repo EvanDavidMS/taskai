@@ -187,15 +187,29 @@ Para liberar espacio sin desinstalar, puedes borrar los modelos que no uses en *
 
 ---
 
-## Linux y macOS
+## Linux
 
-Por ahora el instalador es solo para Windows. En Linux y macOS puedes compilarlo (ver abajo). Ollama se instala así:
+En **[Releases](../../releases/latest)** hay tres formatos. Elige el de tu distro:
 
-- **macOS:** descarga la app de <https://ollama.com/download/mac>.
+| Tu distro | Descarga | Cómo instalarlo |
+|---|---|---|
+| **Cualquiera** (Arch, EndeavourOS, Manjaro, etc.) | `TaskAI_<versión>_amd64.AppImage` | Dale permiso de ejecutar y ábrelo: `chmod +x TaskAI_*.AppImage && ./TaskAI_*.AppImage` |
+| Ubuntu, Debian, Linux Mint, Pop!_OS | `TaskAI_<versión>_amd64.deb` | `sudo apt install ./TaskAI_*_amd64.deb` |
+| Fedora, openSUSE | `TaskAI-<versión>-1.x86_64.rpm` | `sudo dnf install ./TaskAI-*.x86_64.rpm` |
+
+- Las tres se **actualizan solas** como en Windows (con `.deb` y `.rpm` te pide tu contraseña al actualizar).
+- En **Arch/EndeavourOS**, si el AppImage no abre, instala FUSE: `sudo pacman -S fuse2`.
+
+**La IA (Ollama)** se instala aparte en Linux. El asistente de TaskAI te enseña los pasos de tu distro:
+
 - **Arch / EndeavourOS:** `sudo pacman -S ollama ollama-vulkan && sudo systemctl enable --now ollama`
 - **Otras distros:** `curl -fsSL https://ollama.com/install.sh | sh`
 
-Luego: `ollama pull qwen2.5:7b`.
+Luego elige y descarga el modelo desde TaskAI (o `ollama pull qwen2.5:7b`).
+
+## macOS
+
+Todavía no hay instalador para Mac. Puedes compilarlo tú (ver abajo) e instalar Ollama desde <https://ollama.com/download/mac>.
 
 ---
 
@@ -236,7 +250,7 @@ Como cualquier descarga, esos sitios ven tu dirección IP. Sus políticas: [GitH
 
 > **Próximamente.** TaskAI va a solicitar la firma de código gratis que [SignPath Foundation](https://signpath.org) da a proyectos de código abierto. Mientras tanto, los instaladores **no están firmados** (por eso Windows puede mostrar avisos). Cuando se apruebe, aquí dirá: *Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).*
 
-- Los instaladores de Windows se compilan **en GitHub Actions** directamente desde el código de este repositorio ([workflow](.github/workflows/compilar-windows.yml)), no en una computadora personal. Ahí mismo se firmarán.
+- Los instaladores (Windows y Linux) se compilan **en GitHub Actions** directamente desde el código de este repositorio ([workflow](.github/workflows/compilar.yml)), no en una computadora personal. Ahí mismo se firmarán.
 - Se firmarán `taskai.exe` y el instalador `TaskAI_<versión>_x64-setup.exe`.
 - **Autores y revisores (committers and reviewers):** [Evan](https://github.com/EvanDavidMS). Los cambios de otras personas (pull requests) los revisa él antes de aceptarlos.
 - **Aprobadores (approvers):** [Evan](https://github.com/EvanDavidMS). Cada firma se aprueba a mano.
@@ -253,6 +267,8 @@ En pocas palabras:
 - ❌ **No** puedes tomar TaskAI, cerrar el código y distribuirlo (ni venderlo) como un programa propio.
 
 Las versiones hasta la 1.4.0 se publicaron con licencia MIT; desde la 1.4.1 aplica la GPL v3.
+
+**Sonidos** (`public/sounds/`): `palomita.mp3`, `ordenada.mp3` y `recordatorio.mp3` son de [Pixabay](https://pixabay.com/sound-effects/) (Pixabay Content License: se pueden usar gratis dentro de apps, sin atribución obligatoria, pero no redistribuirse sueltos como sonidos). No están bajo la GPL.
 
 ### Nombre y logo
 
