@@ -15,6 +15,7 @@ import TrashView from "./TrashView";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { UpdateBanner, autoUpdates, findUpdate } from "./Updater";
 import { DIARY_FOLDER, isBlankText, stripEmptyPrompts } from "./templates";
+import { doneCount, keySound, play, preloadSounds } from "./sounds";
 import { mdToText, printPdf, saveMarkdown } from "./exporter";
 import "./App.css";
 
@@ -563,6 +564,7 @@ export default function App() {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+  useEffect(preloadSounds, []);
 
   useEffect(() => {
     if (model) localStorage.setItem("taskai.model", model);
@@ -713,6 +715,7 @@ export default function App() {
       ok: "Sí, a la papelera",
       run: async () => {
         await invoke("delete_note", { id });
+        void play("papelera");
         if (id === activeId) {
           setActiveId(null);
           setContent("");
@@ -803,6 +806,7 @@ export default function App() {
         if (activeRef.current === id) {
           setStructured(out);
           setAi("done");
+          void play("ordenada");
         }
 
         // La IA decide la carpeta, salvo que el usuario ya la haya movido a mano
@@ -907,6 +911,7 @@ export default function App() {
     if (e.target !== box) e.preventDefault();
     const all = Array.from(e.currentTarget.querySelectorAll('input[type="checkbox"]'));
     const next = toggleTask(structured, all.indexOf(box));
+    if (doneCount(next) > doneCount(structured)) void play("palomita");
     setStructured(next);
     await putStructured(activeId, next);
   }
@@ -944,6 +949,7 @@ export default function App() {
     const md = structMap[t.noteId];
     if (md == null) return;
     const next = toggleTask(md, t.idx);
+    if (!t.done) void play("palomita");
     if (t.noteId === activeId) setStructured(next);
     await putStructured(t.noteId, next);
   }
@@ -1570,6 +1576,7 @@ export default function App() {
                   maxLength={80}
                   onChange={(e) => setTitle(e.target.value)}
                   onKeyDown={(e) => {
+                    keySound(e);
                     // Enter salta al texto, como en cualquier editor de notas
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -1598,6 +1605,7 @@ export default function App() {
                         trackCaret(e.target);
                       }}
                       onSelect={(e) => trackCaret(e.currentTarget)}
+                      onKeyDown={keySound}
                       onPaste={onPaste}
                       placeholder={"Escribe aquí lo que quieras, como te salga…\nLa IA lo acomoda por ti en el lado derecho."}
                     />

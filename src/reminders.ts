@@ -1,5 +1,6 @@
 // Recordatorios: avisos de Windows (o del sistema) para los pendientes con fecha.
 // Funcionan mientras TaskAI esté abierta, aunque esté minimizada.
+import { play } from "./sounds";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { type Task, taskId, whenLabel } from "./tasks";
 
@@ -97,4 +98,5 @@ export async function checkReminders(tasks: Task[], noteTitle: (id: string) => s
   if (!out.length) return;
   saveSent(sent);
   for (const n of out) await notify(n.title, n.body);
+  void play("recordatorio");
 }

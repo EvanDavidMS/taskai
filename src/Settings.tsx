@@ -9,6 +9,7 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Icon, type IconName } from "./icons";
 import { autoUpdates, setAutoUpdates } from "./Updater";
+import { type SoundName, loadSoundPrefs, play, saveSoundPrefs } from "./sounds";
 
 export type SystemInfo = {
   os: string;
@@ -335,6 +336,10 @@ function GeneralTab({
         {err && <p className="err-text">{err}</p>}
       </Card>
 
+      <Card title="Sonidos" desc="Pequeños sonidos al palomear, al terminar de ordenar, al borrar y en los recordatorios.">
+        <SoundSwitches />
+      </Card>
+
       <Card
         title="Versión"
         desc="Para saber si hay versión nueva, TaskAI consulta la página de descargas de TaskAI en GitHub. No manda tus notas ni ningún dato tuyo."
@@ -440,6 +445,45 @@ function LookTab({
 }
 
 /** Encender Ollama al abrir TaskAI / apagarlo al cerrar (se guarda en config.json: Rust lo usa al cerrar). */
+function SoundSwitches() {
+  const [p, setP] = useState(loadSoundPrefs);
+  const update = (n: typeof p) => {
+    setP(n);
+    saveSoundPrefs(n);
+  };
+  const samples: [SoundName, string][] = [
+    ["palomita", "Palomear"],
+    ["ordenada", "Nota ordenada"],
+    ["papelera", "Papelera"],
+    ["recordatorio", "Recordatorio"],
+    ["tecla", "Tecla"],
+  ];
+  return (
+    <div className="switches">
+      <label className="switch-row">
+        <input type="checkbox" checked={p.on} onChange={(e) => update({ ...p, on: e.target.checked })} />
+        <span className="switch" aria-hidden="true" />
+        <span>Sonidos de TaskAI</span>
+      </label>
+      <label className="switch-row" style={p.on ? undefined : { opacity: 0.5 }}>
+        <input type="checkbox" checked={p.keys} disabled={!p.on} onChange={(e) => update({ ...p, keys: e.target.checked })} />
+        <span className="switch" aria-hidden="true" />
+        <span>Sonido al escribir (cada tecla)</span>
+      </label>
+      {p.on && (
+        <div className="set-inline">
+          <span className="set-note" style={{ margin: 0 }}>Probar:</span>
+          {samples.map(([name, label]) => (
+            <button key={name} className="btn ghost" onClick={() => play(name)}>
+              <Icon name="bell" size={13} /> {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AutoPower() {
   const [p, setP] = useState<{ start: boolean; stop: boolean } | null>(null);
   useEffect(() => {

@@ -1,7 +1,7 @@
-# Compila TaskAI para Windows en GitHub (desde el código del repo) y, cuando SignPath esté
+# Compila TaskAI para Windows y Linux en GitHub (desde el código del repo) y, cuando SignPath esté
 # configurado, firma taskai.exe y el instalador con el certificado de SignPath Foundation.
 #
-# No corre solo: lo lanza scripts\publicar.ps1 (o GitHub → Actions → "Compilar y firmar (Windows)"
+# No corre solo: lo lanza scripts\publicar.ps1 (o GitHub → Actions → "Compilar y firmar"
 # → Run workflow). El Release lo crea publicar.ps1 en la compu de Evan, que es donde vive la llave
 # de las actualizaciones automáticas (nunca se sube a GitHub).
 #
@@ -15,7 +15,7 @@
 #   - En SignPath: proyecto "taskai", política "release-signing" y las configuraciones
 #     de artefacto "taskai-exe" y "taskai-instalador" (ver .signpath/).
 # Sin el secreto, el workflow compila igual pero sin firmar.
-name: Compilar y firmar (Windows)
+name: Compilar y firmar
 
 on:
   workflow_dispatch:
@@ -30,13 +30,13 @@ jobs:
     env:
       FIRMAR: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: pnpm
@@ -72,7 +72,7 @@ jobs:
       - name: Subir taskai.exe sin firmar
         if: env.FIRMAR == 'true'
         id: exe-sin-firma
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: taskai-exe-sin-firma
           path: src-tauri/target/release/taskai.exe
@@ -116,7 +116,7 @@ jobs:
       - name: Subir instalador sin firmar
         if: env.FIRMAR == 'true'
         id: setup-sin-firma
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: taskai-instalador-sin-firma
           path: src-tauri/target/release/bundle/nsis/TaskAI_${{ steps.version.outputs.version }}_x64-setup.exe
@@ -150,7 +150,52 @@ jobs:
             Write-Host ("{0}: {1} {2}" -f $_.Name, $sig.Status, $sig.SignerCertificate.Subject)
           }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: TaskAI-windows
+          path: salida/
+
+  # Linux: .deb (Ubuntu, Debian, Mint…), .rpm (Fedora, openSUSE…) y AppImage (cualquier distro,
+  # incluidas Arch/EndeavourOS). Se compila en Ubuntu 22.04 a propósito: una glibc más vieja hace
+  # que el AppImage y el .deb corran en más distros (las nuevas son compatibles hacia atrás).
+  # Las firmas de actualización (.sig) las hace publicar.ps1 en la compu de Evan, como en Windows.
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Dependencias del sistema (WebKitGTK y compañía)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file             libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Compilar (.deb, .rpm y AppImage)
+        run: pnpm tauri build --bundles deb,rpm,appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Juntar el resultado
+        run: |
+          mkdir -p salida
+          cp src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/rpm/*.rpm              src-tauri/target/release/bundle/appimage/*.AppImage salida/
+          ls -la salida
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: TaskAI-linux
           path: salida/
