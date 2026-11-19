@@ -1062,3 +1062,31 @@ kbd {
 .when-actions .link { white-space: nowrap; }
 
 @container (max-width: 720px) { .add-task > .ico { display: none; } }
+
+/* Favoritas y arrastrar tarjetas a carpetas */
+.cards-sec + .cards-sec { margin-top: 4px; }
+.cards-title {
+  display: flex; align-items: center; gap: 6px; margin: 14px 36px 0; font-size: 12px; font-weight: 650;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint);
+}
+.cards-title .ico { color: #f5b301; fill: #f5b301; }
+.cards-sec:not(:last-child) .cards { padding-bottom: 6px; }
+.cards-title + .cards { padding-top: 10px; }
+.card-star {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; margin-left: auto;
+  color: var(--faint); opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.card-star + .card-del { margin-left: 0; }
+.card-note:hover .card-star, .card-star:focus-visible, .card-star.on { opacity: 1; }
+.card-star:hover { color: #f5b301; background: rgb(245 179 1 / 0.12); }
+.card-star.on { color: #f5b301; }
+.card-star.on .ico { fill: #f5b301; }
+@media (hover: none) { .card-star { opacity: 1; } }
+.card-note[draggable="true"] { -webkit-user-drag: element; }
+.card-note.dragging { opacity: 0.45; transform: scale(0.98); }
+.sidebar.dragging .nav-row .nav-item { outline: 1.5px dashed var(--line); outline-offset: -2px; }
+.sidebar.dragging .nav-row .nav-item.drop {
+  outline: 2px solid var(--accent); background: var(--accent-soft); color: var(--accent); transform: translateX(3px);
+}
+.nav-item { transition: background 0.12s, color 0.12s, transform 0.12s; }
+@container (max-width: 720px) { .cards-title { margin: 12px 20px 0; } }

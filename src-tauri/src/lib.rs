@@ -194,6 +194,9 @@ struct NoteInfo {
     /// Título que el usuario escribió a propósito (opcional). Manda sobre el de la IA.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     title: String,
+    /// Favorita: sale arriba del tablero.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    favorite: bool,
 }
 
 fn meta_path() -> Result<PathBuf, String> {
@@ -223,6 +226,7 @@ struct NoteMeta {
     tags: Vec<String>,
     locked: bool,
     pinned: bool,
+    favorite: bool,
 }
 
 #[derive(Serialize)]
@@ -304,6 +308,7 @@ fn list_notes() -> Result<Vec<NoteMeta>, String> {
             notes.push(NoteMeta {
                 locked: meta.get(&id).map(|m| m.locked).unwrap_or(false),
                 pinned: meta.get(&id).map(|m| m.pinned).unwrap_or(false),
+                favorite: meta.get(&id).map(|m| m.favorite).unwrap_or(false),
                 id,
                 folder: folder.clone(),
                 title: ai_title.unwrap_or_else(|| title_of(&content)),
@@ -672,6 +677,15 @@ fn move_note(id: String, folder: String, manual: bool) -> Result<(), String> {
         save_meta(&meta)?;
     }
     Ok(())
+}
+
+/// Marca o desmarca una nota como favorita (sale arriba del tablero).
+#[tauri::command]
+fn set_favorite(id: String, favorite: bool) -> Result<(), String> {
+    safe_id(&id)?;
+    let mut meta = load_meta();
+    meta.entry(id).or_default().favorite = favorite;
+    save_meta(&meta)
 }
 
 #[tauri::command]
@@ -1546,6 +1560,7 @@ pub fn run() {
             install_ollama,
             move_note,
             set_pinned,
+            set_favorite,
             list_folders,
             create_folder,
             delete_folder,

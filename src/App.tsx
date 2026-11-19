@@ -26,6 +26,7 @@ type NoteMeta = {
   tags: string[];
   locked: boolean;
   pinned: boolean;
+  favorite: boolean;
 };
 type Note = { content: string; structured: string; title: string };
 
@@ -304,6 +305,9 @@ export default function App() {
   const [newFolder, setNewFolder] = useState<string | null>(null); // input de nueva carpeta
   const [moveOpen, setMoveOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  // Arrastrar una tarjeta a una carpeta del menú
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropFolder, setDropFolder] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [accent, setAccent] = useState(savedAccent); // color principal (Configuración → Apariencia)
   const [sortBy, setSortBy] = useState<"recent" | "az">("recent"); // orden de las tarjetas del tablero
@@ -962,6 +966,22 @@ export default function App() {
     if (activeId) await goHome();
   }
 
+  async function toggleFavorite(n: NoteMeta) {
+    await invoke("set_favorite", { id: n.id, favorite: !n.favorite });
+    await refresh();
+  }
+
+  /** Soltar una tarjeta sobre una carpeta del menú: la mueve ahí (como elegida por el usuario). */
+  async function dropOnFolder(folder: string, id: string | null) {
+    setDropFolder(null);
+    setDragId(null);
+    const n = notes.find((x) => x.id === id);
+    if (!n || n.folder === folder) return;
+    const from = n.folder;
+    await moveTo(n.id, folder, true);
+    setToast({ text: `“${n.title}” movida a ${folder}`, undo: () => moveTo(n.id, from, true) });
+  }
+
   function askRemoveFolder(name: string) {
     setAsk({
       title: "¿Borrar esta carpeta?",
@@ -995,7 +1015,7 @@ export default function App() {
     <div className={`app ${libHidden && activeId ? "focus" : ""}`}>
       {/* ---------- Menú lateral: carpetas, etiquetas y ajustes ---------- */}
       {listOpen && <div className="backdrop" onClick={() => setListOpen(false)} />}
-      <aside className={`sidebar ${listOpen ? "open" : ""}`}>
+      <aside className={`sidebar ${listOpen ? "open" : ""} ${dragId ? "dragging" : ""}`}>
         <div className="brand">
           <Logo height={22} />
           <span>TaskAI</span>
@@ -1039,9 +1059,20 @@ export default function App() {
             return (
               <div key={f.name} className="nav-row">
                 <button
-                  className={`nav-item ${folderFilter === f.name && !tagFilter ? "on" : ""}`}
+                  className={`nav-item ${folderFilter === f.name && !tagFilter && section === "notes" ? "on" : ""} ${dropFolder === f.name ? "drop" : ""}`}
                   style={{ "--h": look.hue } as CSSProperties}
                   onClick={() => pickFilter(f.name)}
+                  onDragOver={(e) => {
+                    if (!dragId) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (dropFolder !== f.name) setDropFolder(f.name);
+                  }}
+                  onDragLeave={() => setDropFolder((d) => (d === f.name ? null : d))}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    dropOnFolder(f.name, e.dataTransfer.getData("text/plain") || dragId);
+                  }}
                   onContextMenu={(e) => {
                     if (f.builtin) return;
                     e.preventDefault();
@@ -1273,13 +1304,36 @@ export default function App() {
                 )}
               </div>
             ) : (
+              <>
+                {[
+                  { key: "fav", label: "Favoritas", list: sorted.filter((n) => n.favorite) },
+                  { key: "rest", label: sorted.some((n) => n.favorite) ? "Las demás" : "", list: sorted.filter((n) => !n.favorite) },
+                ]
+                  .filter((s) => s.list.length)
+                  .map((s) => (
+              <section key={s.key} className="cards-sec">
+                {s.label && (
+                  <h2 className="cards-title">
+                    {s.key === "fav" && <Icon name="star" size={14} />} {s.label}
+                  </h2>
+                )}
               <div className="cards">
-                {sorted.map((n) => (
+                {s.list.map((n) => (
                   <div
                     key={n.id}
                     role="button"
                     tabIndex={0}
-                    className="card-note"
+                    className={`card-note ${n.favorite ? "fav" : ""} ${dragId === n.id ? "dragging" : ""}`}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/plain", n.id);
+                      e.dataTransfer.effectAllowed = "move";
+                      setDragId(n.id);
+                    }}
+                    onDragEnd={() => {
+                      setDragId(null);
+                      setDropFolder(null);
+                    }}
                     onClick={() => openNote(n.id)}
                     onKeyDown={(e) => {
                       if (e.target !== e.currentTarget) return;
@@ -1294,6 +1348,18 @@ export default function App() {
                           <Icon name="pin" size={14} />
                         </span>
                       )}
+                      <button
+                        className={`card-star ${n.favorite ? "on" : ""}`}
+                        title={n.favorite ? "Quitar de favoritas" : "Marcar como favorita"}
+                        aria-label={n.favorite ? `Quitar ${n.title} de favoritas` : `Marcar ${n.title} como favorita`}
+                        aria-pressed={n.favorite}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite(n);
+                        }}
+                      >
+                        <Icon name="star" size={15} />
+                      </button>
                       <button
                         className="card-del"
                         title="Borrar nota"
@@ -1327,6 +1393,9 @@ export default function App() {
                   </div>
                 ))}
               </div>
+              </section>
+                  ))}
+              </>
             )}
               </>
             )}

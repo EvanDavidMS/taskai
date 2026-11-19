@@ -19,30 +19,33 @@ Apuntes donde tú escribes rápido y desordenado, y una IA que corre **en tu pro
 
 ## ¿Qué hace?
 
-```
- TUS APUNTES                              ✦ VERSIÓN ORDENADA
- ───────────────────────────────          ───────────────────────────────
- 1  clase redes hoy el profe dijo         # Redes: TCP vs UDP
- 2  q tcp es confiable y udp no,          #redes
- 3  udp pa videollamadas
- 4  ah y examen el viernes a las 9am      ## Protocolos
-                                          - TCP: confiable
-                                          - UDP: rápido (videollamadas)
-
-                                          ## 📌 Pendientes
-                                          ○ Examen de redes   vie 20 nov · 9:00 AM
-```
+<p align="center">
+  <img src="docs/capturas/demo.gif" width="860" alt="Escribes apuntes desordenados a la izquierda y la IA los ordena a la derecha, con pendientes y fechas" />
+</p>
 
 - ✍️ **Tu texto nunca se toca.** Escribes como quieras; la versión ordenada vive aparte.
 - ⚡ **En vivo.** Cuando dejas de escribir unos segundos, la IA ordena tu nota y la ves escribirse.
 - 📁 **Se acomoda sola** en su carpeta: Notas rápidas, Diario, Escuela, Trabajo, Hobbys o las que tú crees.
 - ✅ **Pendientes con fecha y hora reales.** "El viernes a las 9" se vuelve "vie 20 nov · 9:00 AM". Todos tus pendientes, de todas tus notas, en una sola lista: *Atrasados, Hoy, Mañana, Esta semana…*
 - 🔔 **Recordatorios** de Windows antes de cada pendiente con hora, y un resumen de tu día a las 8:00 AM.
+- 🗓️ **Vista de semana** para tus pendientes, y puedes agregarlos a mano o cambiarles la fecha.
+- ⭐ **Favoritas** arriba del tablero; **arrastra** una nota a cualquier carpeta.
+- 🔎 **Busca en todo el texto**, sin importar acentos.
+- 📤 **Exporta** a PDF o Markdown, o cópiala como texto para mandarla por WhatsApp.
 - 🖼️ **Pega imágenes** con `Ctrl + V`.
 - 🗑️ **Papelera** de 30 días: si borras algo por error, lo recuperas.
 - 🎨 Modo claro u oscuro y 11 colores para elegir.
+- 🔄 **Se actualiza solo**: te avisa cuando hay una versión nueva.
 - 🔒 **100% privado.** La IA corre en tu computadora con [Ollama](https://ollama.com). Tus notas nunca se suben a internet.
 - 📄 **Tus archivos son tuyos.** Cada nota es un archivo `.md` normal en `Documentos\TaskAI` (se abre con Obsidian, el Bloc de notas o lo que quieras).
+
+### Capturas
+
+| Tus notas | Una nota ordenada |
+|---|---|
+| <img src="docs/capturas/tablero-oscuro.png" alt="Tablero de notas en tarjetas, modo oscuro" /> | <img src="docs/capturas/nota-claro.png" alt="Apuntes a la izquierda y versión ordenada a la derecha, modo claro" /> |
+| **Todos tus pendientes** | **Tu semana** |
+| <img src="docs/capturas/pendientes-oscuro.png" alt="Pendientes agrupados en Atrasados, Hoy, Mañana y Esta semana" /> | <img src="docs/capturas/semana-claro.png" alt="Pendientes de la semana en columnas por día" /> |
 
 ---
 
@@ -106,6 +109,8 @@ Solo si algo falló en el paso 4:
 - **📌 Fijar**: congela la versión ordenada para que la IA ya no la cambie sola. **Revisar** la actualiza cuando tú quieras.
 - **Lectura** (`Ctrl + E`): esconde tus apuntes y deja solo la versión ordenada.
 - **⏻ Encender/apagar la IA** (abajo a la izquierda). Apagarla libera la memoria de tu tarjeta de video.
+- **⭐ Favoritas:** pica la estrella de una tarjeta para tenerla siempre arriba. **Arrastra** una tarjeta a una carpeta del menú para moverla.
+- **Exportar** (en la nota): PDF, Markdown o copiar como texto.
 
 ### Atajos de teclado
 
@@ -117,6 +122,7 @@ Solo si algo falló en el paso 4:
 | `Ctrl + E` | Escribir ⇄ Lectura |
 | `Esc` | Volver a tus notas |
 | `Ctrl + ,` | Configuración |
+| `Supr` | Mandar a la papelera la tarjeta seleccionada |
 
 ---
 
