@@ -1,0 +1,39 @@
+# Genera el instalador de Windows (.exe y .msi).
+# Solo corre a mano: GitHub → Actions → "Instalador de Windows" → Run workflow.
+# En repos privados consume minutos gratis de Actions (Windows cuenta x2), por eso no es automático.
+name: Instalador de Windows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm tauri build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TaskAI-instalador-windows
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
