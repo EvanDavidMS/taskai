@@ -2,7 +2,7 @@
 
 > Para la próxima sesión de Claude Code: lee esto completo y luego [`CLAUDE.md`](CLAUDE.md).
 > Última actualización: **19 de noviembre de 2026**, desde la PC de escritorio de Evan (**Windows 11, RTX 3060 12 GB, 16 GB RAM**).
-> Versión publicada: **v1.4.3** (Windows + Linux, compilada en GitHub Actions) (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
+> Versión publicada: **v1.4.4** (Windows + Linux, compilada en GitHub Actions) (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
 
 ## 1. Dónde vamos
 
@@ -186,6 +186,12 @@ Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
 
 **Pendiente (siguiente sesión)**
 9. ~~Instaladores de **Linux**~~ ✅ v1.4.3 trabajo `linux` en `compilar.yml` (Ubuntu 22.04 a propósito, por la glibc vieja = corre en más distros): `.deb`, `.rpm` y AppImage (~80 MB; el que sirve para Arch/EndeavourOS, puede pedir `fuse2`). `publicar.ps1` firma los 3 y pone en `latest.json` `linux-x86_64-{appimage,deb,rpm}` + `linux-x86_64` (=AppImage): el actualizador de Tauri busca `{os}-{arch}-{tipo}` y luego `{os}-{arch}`; con deb/rpm pide la contraseña con pkexec. Probado en una rama de prueba (19 nov): los dos trabajos OK y las 3 firmas OK. **Falta:** que Evan pruebe el AppImage en su laptop. **macOS:** sin instalador (habría que agregar un trabajo `macos`; sin firma de Apple, macOS lo bloquea feo).
+
+- **v1.4.4 (19 nov), arreglos de Linux probados en la laptop (Arch + Hyprland/Quickshell):**
+  - *Sonidos:* el AppImage traía el núcleo de GStreamer pero **ningún plugin** → WebKit no decodificaba los `.mp3`. Arreglo: `bundle.linux.appimage.bundleMediaFramework: true` + en `compilar.yml` instalar `gstreamer1.0-{plugins-base,plugins-good,plugins-bad,libav,pulseaudio}` y `patchelf` (el plugin gstreamer de linuxdeploy lo exige). El AppImage pesa más.
+  - *Ícono:* Quickshell (y otros) **no encuentran el ícono por nombre** (`taskai`) → sale roto en notificaciones y lanzador. Arreglo: rutas completas. `integrate_linux()` en `lib.rs` copia el PNG a `~/.local/share/icons/hicolor/256x256/apps/taskai.png`; el comando `notify_icon` se lo pasa a `sendNotification` (`reminders.ts`); si es AppImage (`$APPIMAGE`) también escribe `~/.local/share/applications/taskai.desktop` con `Exec` e `Icon` absolutos. `.deb`/`.rpm` usan la plantilla `src-tauri/linux/taskai.desktop` (`Icon=/usr/share/icons/hicolor/128x128/apps/taskai.png`).
+  - *Compilar el AppImage en Arch:* `env NO_STRIP=true pnpm tauri build --bundles appimage` y tener `patchelf` (sin `NO_STRIP` linuxdeploy falla). El aviso de `gst-plugin-scanner` en Arch es inofensivo.
+  - *Publicar desde Linux:* no hay `pwsh`; se hizo a mano lo mismo que `publicar.ps1` (llave en `~/.tauri/taskai.key`).
 10. ~~Plantilla de **Diario**~~ ✅ v1.4.1 `create_note` en "Diario" escribe 4 preguntas (`DIARY_PROMPTS` en `lib.rs` **y** `src/templates.ts`: mantenerlas iguales). `strip_empty_prompts`/`stripEmptyPrompts` quitan las que quedaron sin contestar: así una plantilla vacía cuenta como nota vacía (se descarta), no se manda a la IA, no cuenta palabras y sale "Nota sin título". Prueba: `cargo test --lib`.
 11. ~~**Microanimaciones**~~ ✅ v1.4.1 bloque al final de `App.css`: entrar a la nota, tablero con `key` por sección (vuelve a animar), tarjetas escalonadas (`--i`), punto de la palomita con rebote (`::after`) y tachado que aparece suave; todo se apaga con `prefers-reduced-motion`. Las capturas headless congelan las animaciones: para capturar, apagarlas con un estilo (`?still` en el preview).
 12. ~~**Sonidos**~~ ✅ v1.4.3 `src/sounds.ts` (Web Audio, se precargan; volumen por sonido en `VOLUME`), archivos en `public/sounds/`: `tecla` (cada tecla en el editor y el título, tono un poco al azar, sin repetir al dejar apretada), `papelera` (mandar a la papelera), `palomita` (solo al palomear, no al despalomear), `ordenada` (la IA terminó), `recordatorio`. Los originales de Evan están en Descargas (los dos con nombre: tecla y papelera; los 3 de Pixabay los repartí yo). Configuración → General → Sonidos: interruptor general + uno para las teclas + botones para probar. `localStorage` `taskai.sounds` = `{on, keys}`. Crédito de Pixabay en el README (no son GPL).

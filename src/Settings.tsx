@@ -789,7 +789,10 @@ function RemindTab() {
           </select>
           <button
             className="btn ghost"
-            onClick={() => notify("✦ Así se ven tus recordatorios", "Ejemplo: junta con Kuroo · vie 20 nov · 2:00 PM")}
+            onClick={() => {
+              void play("recordatorio"); // como un recordatorio de verdad: aviso + sonido
+              void notify("✦ Así se ven tus recordatorios", "Ejemplo: junta con Kuroo · vie 20 nov · 2:00 PM");
+            }}
           >
             <Icon name="bell" size={14} /> Probar aviso
           </button>

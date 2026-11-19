@@ -1,0 +1,9 @@
+[Desktop Entry]
+Categories=Office;
+Comment={{comment}}
+Exec={{exec}}
+StartupWMClass={{exec}}
+Icon=/usr/share/icons/hicolor/128x128/apps/{{icon}}.png
+Name={{name}}
+Terminal=false
+Type=Application

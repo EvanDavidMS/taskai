@@ -1602,7 +1602,68 @@ async fn ai_classify(text: String, model: String) -> Result<String, String> {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Ruta del ícono de TaskAI en Linux (para las notificaciones).
+#[cfg(target_os = "linux")]
+fn linux_icon_path() -> Option<PathBuf> {
+    Some(dirs::data_dir()?.join("icons/hicolor/256x256/apps/taskai.png"))
+}
+
+/// Linux: copia el ícono a ~/.local/share/icons. Las notificaciones lo piden con su ruta completa,
+/// porque algunos escritorios (Quickshell, por ejemplo) no encuentran íconos nuevos por su nombre.
+/// Si es AppImage (que no se "instala"), también crea el acceso directo del menú, para que salga
+/// en el menú y con su ícono en la barra. Se repite en cada arranque por si movieron el .AppImage.
+#[cfg(target_os = "linux")]
+fn integrate_linux() {
+    let Some(icon) = linux_icon_path() else { return };
+    let png: &[u8] = include_bytes!("../icons/128x128@2x.png");
+    if fs::read(&icon).ok().as_deref() != Some(png) {
+        if let Some(dir) = icon.parent() {
+            let _ = fs::create_dir_all(dir);
+        }
+        let _ = fs::write(&icon, png);
+    }
+
+    let Some(appimage) = std::env::var_os("APPIMAGE") else { return };
+    let Some(data) = dirs::data_dir() else { return };
+    // El ícono también con su ruta completa: hay lanzadores (Quickshell) que no lo hallan por nombre
+    let icon = icon.to_string_lossy();
+    let apps = data.join("applications");
+    let _ = fs::create_dir_all(&apps);
+    // Comillas por si la ruta trae espacios
+    let exec = appimage.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+    let desktop = format!(
+        "[Desktop Entry]\nType=Application\nName=TaskAI\nComment=Apuntes que una IA local ordena en vivo\n\
+         Exec=\"{exec}\"\nIcon={icon}\nStartupWMClass=taskai\nCategories=Office;\nTerminal=false\n"
+    );
+    let path = apps.join("taskai.desktop");
+    if fs::read_to_string(&path).ok().as_deref() != Some(desktop.as_str()) {
+        let _ = fs::write(&path, desktop);
+        // Avisar al menú y al tema de íconos (si las herramientas no están, no pasa nada)
+        let _ = std::process::Command::new("update-desktop-database").arg(&apps).status();
+        let _ = std::process::Command::new("gtk-update-icon-cache")
+            .args(["-f", "-t"])
+            .arg(data.join("icons/hicolor"))
+            .status();
+    }
+}
+
+/// Ícono para las notificaciones: en Linux la ruta completa del PNG; en Windows no hace falta.
+#[tauri::command]
+fn notify_icon() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let p = linux_icon_path()?;
+        if p.exists() {
+            return Some(p.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    integrate_linux();
+
     tauri::Builder::default()
         // Solo una ventana de TaskAI: si ya está abierto, se trae al frente en vez de abrir otro.
         // (Tiene que ir primero. También evita que dos copias se peleen por encender/apagar Ollama.)
@@ -1660,7 +1721,8 @@ pub fn run() {
             ollama_stop,
             ai_delete,
             ai_model_sizes,
-            set_ai_power
+            set_ai_power,
+            notify_icon
         ])
         .build(tauri::generate_context!())
         .expect("error al iniciar TaskAI")

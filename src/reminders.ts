@@ -1,6 +1,7 @@
 // Recordatorios: avisos de Windows (o del sistema) para los pendientes con fecha.
 // Funcionan mientras TaskAI esté abierta, aunque esté minimizada.
 import { play } from "./sounds";
+import { invoke } from "@tauri-apps/api/core";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { type Task, taskId, whenLabel } from "./tasks";
 
@@ -46,8 +47,17 @@ async function canNotify() {
   return (await requestPermission()) === "granted";
 }
 
+// En Linux el ícono va con su ruta completa (algunos escritorios no lo encuentran por nombre).
+let iconPath: Promise<string | null> | null = null;
+function notifyIcon() {
+  iconPath ??= invoke<string | null>("notify_icon").catch(() => null);
+  return iconPath;
+}
+
 export async function notify(title: string, body: string) {
-  if (await canNotify()) sendNotification({ title, body });
+  if (!(await canNotify())) return;
+  const icon = await notifyIcon();
+  sendNotification(icon ? { title, body, icon } : { title, body });
 }
 
 const ymd = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
