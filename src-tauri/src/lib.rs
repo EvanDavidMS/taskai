@@ -1292,6 +1292,16 @@ async fn ai_classify(text: String, model: String) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Solo una ventana de TaskAI: si ya está abierto, se trae al frente en vez de abrir otro.
+        // (Tiene que ir primero. También evita que dos copias se peleen por encender/apagar Ollama.)
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            use tauri::Manager;
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
