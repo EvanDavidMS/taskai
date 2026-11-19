@@ -126,7 +126,7 @@ Son personales y viven en `Documentos/TaskAI` de cada compu. Si Evan quiere las 
 | Fechas y horas calculadas en código | El 7B fallaba ("viernes 19", "a la 1" → 15:00). |
 | Ejemplos few-shot en vez de muchas reglas | Con muchas reglas el 7B las ignoraba. |
 | Ollama con Vulkan en Arch | `ollama-cuda` arrastra CUDA (≈6 GB). |
-| Licencia MIT; repo **privado** por ahora | Evan lo pidió privado el 18 nov 2026 (antes era público). |
+| Licencia MIT; repo **público** desde el 19 nov 2026 | Para que otros lo descarguen desde Releases (v1.2.0). |
 
 ## 4. Configuración del usuario
 
