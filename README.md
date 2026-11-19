@@ -1,15 +1,16 @@
 <div align="center">
 
-# ✦ TaskAI
+<img src="src-tauri/app-icon-square.png" width="96" alt="Logo de TaskAI" />
+
+# TaskAI
 
 **Escribe como piensas. La IA lo ordena.**
 
-Apuntes donde tú escribes rápido y desordenado a la izquierda, y una IA **local** te muestra la versión ordenada a la derecha, en vivo, sin tocar ni una letra de lo que escribiste.
+Apuntes donde tú escribes rápido y desordenado, y una IA que corre **en tu propia computadora** te los devuelve ordenados, con tus pendientes y fechas, en vivo. Gratis y privado.
 
-![Rust](https://img.shields.io/badge/Rust-000?logo=rust&logoColor=white)
-![Tauri](https://img.shields.io/badge/Tauri_2-24C8DB?logo=tauri&logoColor=white)
-![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB)
-![Ollama](https://img.shields.io/badge/IA_local-Ollama-ff6a3d)
+![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D6?logo=windows&logoColor=white)
+![IA local](https://img.shields.io/badge/IA_local-Ollama-111)
+![Gratis](https://img.shields.io/badge/precio-gratis-2ea44f)
 ![Licencia MIT](https://img.shields.io/badge/licencia-MIT-green)
 
 </div>
@@ -19,75 +20,186 @@ Apuntes donde tú escribes rápido y desordenado a la izquierda, y una IA **loca
 ## ¿Qué hace?
 
 ```
-┌─────────────────────────────┬─────────────────────────────┐
-│  TUS APUNTES                │  ✦ VERSIÓN ORDENADA         │
-│                             │                             │
-│  clase redes hoy            │  # Redes: TCP vs UDP        │
-│  el profe dijo q tcp es     │  ## Protocolos              │
-│  confiable y udp no, udp    │  - **TCP**: confiable       │
-│  pa videollamadas           │  - **UDP**: rápido, usado   │
-│  ah y examen el viernes     │    en videollamadas         │
-│                             │  ## 📌 Pendientes           │
-│                             │  - [ ] Examen el viernes    │
-└─────────────────────────────┴─────────────────────────────┘
+ TUS APUNTES                              ✦ VERSIÓN ORDENADA
+ ───────────────────────────────          ───────────────────────────────
+ 1  clase redes hoy el profe dijo         # Redes: TCP vs UDP
+ 2  q tcp es confiable y udp no,          #redes
+ 3  udp pa videollamadas
+ 4  ah y examen el viernes a las 9am      ## Protocolos
+                                          - TCP: confiable
+                                          - UDP: rápido (videollamadas)
+
+                                          ## 📌 Pendientes
+                                          ○ Examen de redes   vie 20 nov · 9:00 AM
 ```
 
-- ✍️ **No destructivo**: tu texto original nunca se modifica. La versión ordenada vive aparte.
-- ⚡ **En vivo**: la IA ordena cuando dejas de escribir unos segundos. La misma nota da siempre el mismo resultado.
-- 📁 **Se acomoda sola**: la IA manda cada nota a su carpeta (Diario, Escuela, Trabajo, Hobbys, Notas rápidas o las tuyas). Si tú la mueves, respeta tu decisión.
-- 📌 **Pendientes con fecha y hora reales**: "examen el viernes" o "a la 1" se convierten en fechas y horas concretas. Los palomeas ahí mismo y no se pierden al reordenar.
-- 📌 **Fija una versión** para que la IA ya no la cambie sola, y revísala cuando quieras.
-- 🔒 **100% privado y gratis**: la IA corre en tu propia computadora con [Ollama](https://ollama.com). Tus apuntes nunca salen de tu máquina.
-- 📁 **Tus archivos son tuyos**: las notas son `.md` normales (compatibles con Obsidian) en `Documentos/TaskAI`.
-- ☀️ Modo claro, oscuro o del sistema · modo enfoque · se adapta a cualquier tamaño de ventana.
+- ✍️ **Tu texto nunca se toca.** Escribes como quieras; la versión ordenada vive aparte.
+- ⚡ **En vivo.** Cuando dejas de escribir unos segundos, la IA ordena tu nota y la ves escribirse.
+- 📁 **Se acomoda sola** en su carpeta: Notas rápidas, Diario, Escuela, Trabajo, Hobbys o las que tú crees.
+- ✅ **Pendientes con fecha y hora reales.** "El viernes a las 9" se vuelve "vie 20 nov · 9:00 AM". Todos tus pendientes, de todas tus notas, en una sola lista: *Atrasados, Hoy, Mañana, Esta semana…*
+- 🔔 **Recordatorios** de Windows antes de cada pendiente con hora, y un resumen de tu día a las 8:00 AM.
+- 🖼️ **Pega imágenes** con `Ctrl + V`.
+- 🗑️ **Papelera** de 30 días: si borras algo por error, lo recuperas.
+- 🎨 Modo claro u oscuro y 11 colores para elegir.
+- 🔒 **100% privado.** La IA corre en tu computadora con [Ollama](https://ollama.com). Tus notas nunca se suben a internet.
+- 📄 **Tus archivos son tuyos.** Cada nota es un archivo `.md` normal en `Documentos\TaskAI` (se abre con Obsidian, el Bloc de notas o lo que quieras).
 
-## Instalación
+---
 
-### 1. Instala la IA (gratis)
+## Instalación en Windows (5 minutos + la descarga de la IA)
 
-1. Descarga Ollama: <https://ollama.com/download>
-2. Baja un modelo:
+### 1. Descarga TaskAI
+
+Entra a **[Releases](../../releases/latest)** y descarga el archivo que termina en **`_x64-setup.exe`** (por ejemplo `TaskAI_1.2.0_x64-setup.exe`).
+
+### 2. Instálalo
+
+Abre el archivo y dale **Siguiente → Instalar**. No pide contraseña de administrador.
+
+> **¿Te salió "Windows protegió su PC"?**
+> Es normal en programas nuevos que todavía no tienen firma digital de pago. Pica **Más información → Ejecutar de todas formas**. TaskAI es de código abierto: puedes revisar todo el código aquí mismo.
+
+### 3. Ábrelo: el asistente hace lo demás
+
+La primera vez, TaskAI te guía en 6 pasos:
+
+1. **Tu nombre.**
+2. **Tema:** claro, oscuro o el de tu sistema.
+3. **Dónde guardar tus notas** (por defecto `Documentos\TaskAI`).
+4. **La IA:** si no tienes Ollama, pica **⬇ Instalar Ollama automáticamente** y TaskAI descarga el instalador oficial, lo instala en silencio y lo enciende. No tienes que hacer nada más.
+5. **El modelo** (el "cerebro" de la IA). Elige uno y pica **⬇ Descargar y continuar**; verás una barra de progreso. Ve la tabla de abajo.
+6. **¡Listo!** Escribe tu primera nota.
+
+> La descarga del modelo es grande (2 a 9 GB) y solo se hace una vez. Después, TaskAI funciona **sin internet**.
+
+### ¿Qué modelo elijo?
+
+| Modelo | Tamaño | Para qué computadora |
+|---|---|---|
+| `qwen2.5:3b` · Ligero | 1.9 GB | 8 GB de RAM o sin tarjeta de video. Rápido, ordena un poco menos fino. |
+| `qwen2.5:7b` · **Recomendado** | 4.7 GB | Tarjeta de video (NVIDIA/AMD) o 16 GB de RAM. El mejor equilibrio. |
+| `qwen2.5:14b` · Potente | 9 GB | Tarjeta de video de 12 GB o 32 GB de RAM. El más inteligente, más lento. |
+
+Lo puedes cambiar cuando quieras en **Configuración → Inteligencia artificial**.
+
+---
+
+## Si el asistente no pudo instalar la IA (instalación manual)
+
+Solo si algo falló en el paso 4:
+
+1. Descarga Ollama desde **<https://ollama.com/download/windows>** e instálalo (Siguiente → Instalar).
+2. Abre **PowerShell** (búscalo en el menú Inicio) y pega:
+   ```powershell
+   ollama pull qwen2.5:7b
+   ```
+   Espera a que diga `success`.
+3. En TaskAI ve a **Configuración → Inteligencia artificial** y pica **↻ Revisar**.
+
+---
+
+## Cómo se usa
+
+- **Nueva nota** (`Ctrl + N`): escribe como te salga. El título es opcional; si lo pones, ayuda a la IA a elegir la carpeta.
+- A los 3 segundos de dejar de escribir, la **versión ordenada** aparece a la derecha.
+- **Pendientes** (menú de la izquierda): todo lo que tienes que hacer, de todas tus notas, ordenado por fecha. Pica el renglón para palomearlo.
+- **📌 Fijar**: congela la versión ordenada para que la IA ya no la cambie sola. **Revisar** la actualiza cuando tú quieras.
+- **Lectura** (`Ctrl + E`): esconde tus apuntes y deja solo la versión ordenada.
+- **⏻ Encender/apagar la IA** (abajo a la izquierda). Apagarla libera la memoria de tu tarjeta de video.
+
+### Atajos de teclado
+
+| Atajo | Qué hace |
+|---|---|
+| `Ctrl + N` | Nueva nota |
+| `Ctrl + K` | Buscar |
+| `Ctrl + Enter` | Ordenar ahora |
+| `Ctrl + E` | Escribir ⇄ Lectura |
+| `Esc` | Volver a tus notas |
+| `Ctrl + ,` | Configuración |
+
+---
+
+## Preguntas frecuentes
+
+<details>
+<summary><b>¿Cuánto cuesta? ¿Necesito cuenta?</b></summary>
+
+Nada y no. TaskAI y Ollama son gratis, no hay cuentas, suscripciones ni anuncios.
+</details>
+
+<details>
+<summary><b>¿Mis notas se suben a internet?</b></summary>
+
+No. La IA corre en tu computadora. TaskAI solo se conecta a internet para descargar Ollama y el modelo la primera vez.
+</details>
+
+<details>
+<summary><b>Dice "La IA está apagada"</b></summary>
+
+Pica **Encender la IA** (o el botón ⏻ abajo a la izquierda). Por defecto, TaskAI enciende la IA al abrirse y la apaga al cerrarse; lo cambias en **Configuración → Inteligencia artificial → Encendido automático**.
+</details>
+
+<details>
+<summary><b>La primera vez tarda mucho en ordenar</b></summary>
+
+La primera nota de cada sesión carga el modelo en memoria (10 a 40 segundos). Después es mucho más rápido. Si siempre es lento, prueba el modelo **Ligero**.
+</details>
+
+<details>
+<summary><b>No me llegan los recordatorios</b></summary>
+
+- TaskAI tiene que estar abierto (puede estar minimizado).
+- Revisa que estén activados en **Configuración → Recordatorios** y pica **Probar aviso**.
+- En Windows, revisa que no tengas activado **No molestar** (Configuración de Windows → Sistema → Notificaciones).
+</details>
+
+<details>
+<summary><b>¿Dónde están mis notas? ¿Cómo las respaldo?</b></summary>
+
+En `Documentos\TaskAI` (o la carpeta que elegiste; la ves en **Configuración → General → Abrir**). Para respaldarlas o pasarlas a otra compu, copia la carpeta completa, incluida la carpeta oculta `.taskai` (ahí están las versiones ordenadas, imágenes y la papelera).
+</details>
+
+<details>
+<summary><b>¿Cómo lo desinstalo?</b></summary>
+
+Configuración de Windows → Aplicaciones → TaskAI → Desinstalar. Tus notas **no** se borran: siguen en `Documentos\TaskAI`. Ollama se desinstala aparte, igual que cualquier programa.
+</details>
+
+---
+
+## Linux y macOS
+
+Por ahora el instalador es solo para Windows. En Linux y macOS puedes compilarlo (ver abajo). Ollama se instala así:
+
+- **macOS:** descarga la app de <https://ollama.com/download/mac>.
+- **Arch / EndeavourOS:** `sudo pacman -S ollama ollama-vulkan && sudo systemctl enable --now ollama`
+- **Otras distros:** `curl -fsSL https://ollama.com/install.sh | sh`
+
+Luego: `ollama pull qwen2.5:7b`.
+
+---
+
+## Para desarrolladores
+
+Necesitas [Rust](https://rustup.rs), [Node.js 20+](https://nodejs.org), [pnpm](https://pnpm.io) y los [requisitos de Tauri](https://tauri.app/start/prerequisites/) de tu sistema (en Windows: *Build Tools de Visual Studio* con "Desarrollo para el escritorio con C++").
 
 ```bash
-ollama pull qwen2.5:7b    # recomendado (≈4.7 GB, ideal con GPU)
-ollama pull qwen2.5:3b    # ligero, para computadoras modestas
-```
-
-### 2. Corre TaskAI
-
-> Pronto habrá instaladores para Windows y Linux en [Releases](../../releases).
-
-Desde el código fuente necesitas [Rust](https://rustup.rs), [Node.js](https://nodejs.org) y [pnpm](https://pnpm.io), además de los [requisitos de Tauri](https://tauri.app/start/prerequisites/) para tu sistema.
-
-```bash
-gh repo clone EvanDavidMS/taskai   # repo privado
+git clone https://github.com/EvanDavidMS/taskai.git
 cd taskai
 pnpm install
 pnpm tauri dev      # modo desarrollo
-pnpm tauri build    # genera el instalador
+pnpm tauri build    # instaladores en src-tauri/target/release/bundle/
 ```
-
-## Cómo está hecho
 
 | Parte | Tecnología |
 |---|---|
-| Backend | **Rust** + Tauri 2: archivos, conexión con Ollama |
-| Interfaz | React + TypeScript + Vite |
-| IA | Ollama (`/api/generate`), modelos locales |
-| Markdown | `marked` + `DOMPurify` (sanitizado contra XSS) |
+| App de escritorio | Tauri 2 + Rust (notas en disco, conexión con Ollama) |
+| Interfaz | React 19 + TypeScript + Vite |
+| IA | Ollama, modelos Qwen 2.5 locales |
+| Markdown | `marked` + `DOMPurify` |
 
-```
-src/            → interfaz (React)
-src-tauri/src/  → backend (Rust): notas, IA
-```
-
-## Ideas a futuro
-
-- [ ] Instaladores automáticos con GitHub Actions (Windows `.exe`/`.msi`, Linux `.deb`/AppImage)
-- [x] Marcar pendientes desde la vista ordenada
-- [x] Modo claro
-- [ ] Atajos de teclado e ícono propio
-- [ ] Respuesta en streaming (ver cómo se escribe la versión ordenada)
+Detalles técnicos y decisiones de diseño en [`CLAUDE.md`](CLAUDE.md) y [`HANDOFF.md`](HANDOFF.md).
 
 ## Licencia
 

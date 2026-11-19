@@ -1,7 +1,7 @@
 {
   "name": "taskai",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.2.0",
   "description": "Apuntes que una IA local ordena en vivo",
   "license": "MIT",
   "type": "module",
