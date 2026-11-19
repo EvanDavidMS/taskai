@@ -1,0 +1,156 @@
+# Compila TaskAI para Windows en GitHub (desde el código del repo) y, cuando SignPath esté
+# configurado, firma taskai.exe y el instalador con el certificado de SignPath Foundation.
+#
+# No corre solo: lo lanza scripts\publicar.ps1 (o GitHub → Actions → "Compilar y firmar (Windows)"
+# → Run workflow). El Release lo crea publicar.ps1 en la compu de Evan, que es donde vive la llave
+# de las actualizaciones automáticas (nunca se sube a GitHub).
+#
+# Por qué en dos pasos: Defender revisa el taskai.exe instalado, así que hay que firmarlo ANTES de
+# meterlo al instalador (SignPath no puede firmar lo que va dentro de un instalador NSIS).
+#   1) compilar taskai.exe → 2) firmarlo → 3) armar el instalador con el exe firmado → 4) firmar el instalador
+#
+# Para activar la firma (una sola vez, cuando SignPath apruebe el proyecto):
+#   - Secreto  SIGNPATH_API_TOKEN          (GitHub → Settings → Secrets and variables → Actions → Secrets)
+#   - Variable SIGNPATH_ORGANIZATION_ID    (misma página → Variables)
+#   - En SignPath: proyecto "taskai", política "release-signing" y las configuraciones
+#     de artefacto "taskai-exe" y "taskai-instalador" (ver .signpath/).
+# Sin el secreto, el workflow compila igual pero sin firmar.
+name: Compilar y firmar (Windows)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      FIRMAR: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Leer la versión
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "TaskAI $v"
+
+      # 1) El programa. Ojo: `tauri bundle` le escribe a taskai.exe el tipo de instalador ("nsis"),
+      #    y eso rompería una firma hecha antes. Por eso se arma el instalador una vez aquí (el exe
+      #    queda ya marcado), se firma el exe, y se vuelve a armar: la segunda vez el exe no cambia.
+      - name: Compilar taskai.exe
+        run: pnpm tauri build --no-bundle
+
+      - name: Marcar taskai.exe como instalado con NSIS
+        if: env.FIRMAR == 'true'
+        shell: bash
+        run: pnpm tauri bundle --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      # 2) Firmar taskai.exe
+      - name: Subir taskai.exe sin firmar
+        if: env.FIRMAR == 'true'
+        id: exe-sin-firma
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskai-exe-sin-firma
+          path: src-tauri/target/release/taskai.exe
+
+      - name: Firmar taskai.exe (SignPath)
+        if: env.FIRMAR == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: taskai
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: taskai-exe
+          github-artifact-id: ${{ steps.exe-sin-firma.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600 # cada firma la aprueba Evan a mano en SignPath
+          output-artifact-directory: firmado-exe
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+
+      - name: Usar el taskai.exe firmado
+        if: env.FIRMAR == 'true'
+        shell: pwsh
+        run: Copy-Item firmado-exe/taskai.exe src-tauri/target/release/taskai.exe -Force
+
+      # 3) Armar el instalador con el exe (firmado o no). La firma de las actualizaciones automáticas
+      #    (.sig) la hace publicar.ps1 después, sobre el instalador ya firmado.
+      - name: Armar el instalador
+        shell: bash
+        run: pnpm tauri bundle --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Revisar que taskai.exe siga firmado
+        if: env.FIRMAR == 'true'
+        shell: pwsh
+        run: |
+          $s = Get-AuthenticodeSignature src-tauri/target/release/taskai.exe
+          if ($s.Status -ne 'Valid') { throw "La firma de taskai.exe se rompió al armar el instalador ($($s.Status))" }
+          Write-Host "taskai.exe firmado por: $($s.SignerCertificate.Subject)"
+
+      # 4) Firmar el instalador
+      - name: Subir instalador sin firmar
+        if: env.FIRMAR == 'true'
+        id: setup-sin-firma
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskai-instalador-sin-firma
+          path: src-tauri/target/release/bundle/nsis/TaskAI_${{ steps.version.outputs.version }}_x64-setup.exe
+
+      - name: Firmar el instalador (SignPath)
+        if: env.FIRMAR == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: taskai
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: taskai-instalador
+          github-artifact-id: ${{ steps.setup-sin-firma.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: firmado-setup
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+
+      - name: Juntar el resultado
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          New-Item -ItemType Directory -Force salida | Out-Null
+          $setup = if ($env:FIRMAR -eq 'true') { "firmado-setup/TaskAI_${v}_x64-setup.exe" } else { "src-tauri/target/release/bundle/nsis/TaskAI_${v}_x64-setup.exe" }
+          Copy-Item $setup salida/
+          Copy-Item src-tauri/target/release/taskai.exe salida/  # para reportar falsos positivos
+          Get-ChildItem salida | ForEach-Object {
+            $sig = Get-AuthenticodeSignature $_.FullName
+            Write-Host ("{0}: {1} {2}" -f $_.Name, $sig.Status, $sig.SignerCertificate.Subject)
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TaskAI-windows
+          path: salida/

@@ -1090,3 +1090,46 @@ kbd {
 }
 .nav-item { transition: background 0.12s, color 0.12s, transform 0.12s; }
 @container (max-width: 720px) { .cards-title { margin: 12px 20px 0; } }
+
+/* ---------- Microanimaciones ----------
+   Cortas (≤ 0.3 s) y sin estorbar. Si en Windows/Linux está activado "reducir animaciones", se apagan (ver el final). */
+:root { --ease-out: cubic-bezier(0.22, 1, 0.36, 1); --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* Abrir una nota: la barra aparece y los paneles suben un poquito */
+.toolbar { animation: fade 0.18s ease both; }
+.split { animation: note-in 0.28s var(--ease-out) both; }
+@keyframes note-in { from { opacity: 0; transform: translateY(10px) scale(0.995); } }
+/* Cambiar entre Apuntes/Ordenada (pantalla angosta) o entrar a Lectura: el panel se funde */
+.raw-pane, .ai-pane { animation: fade 0.2s ease both; }
+
+/* Cambiar de sección o carpeta: el tablero entra de nuevo (App.tsx le cambia la key) */
+.board-head, .board-bar { animation: card-in 0.26s var(--ease-out) both; }
+/* Las tarjetas llegan una tras otra (App.tsx pone --i = su posición) */
+.card-note {
+  animation: card-in 0.34s var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 14) * 22ms);
+}
+.card-note:active { transform: translateY(0) scale(0.985); transition-duration: 0.08s; }
+
+/* Palomear: el punto crece con un rebote y el tachado aparece suave */
+.tcheck, .md input[type="checkbox"] { display: grid; place-items: center; }
+.tcheck::after, .md input[type="checkbox"]::after {
+  content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+  transform: scale(0); transition: transform 0.28s var(--ease-spring);
+}
+.trow.done .tcheck, .md input[type="checkbox"]:checked { background: transparent; }
+.trow.done .tcheck::after, .md input[type="checkbox"]:checked::after { transform: scale(1); }
+.tcheck, .md input[type="checkbox"] { transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s; }
+.trow:active .tcheck, .md li:has(> input[type="checkbox"]):active > input { transform: scale(0.86); }
+.ttext { text-decoration: line-through; text-decoration-color: transparent; transition: color 0.25s, text-decoration-color 0.25s; }
+.trow.done .ttext, .md li:has(> input:checked) > .ttext { text-decoration-color: var(--faint); }
+
+/* Menú lateral: la carpeta activa se marca suave */
+.nav-item.on { transition: background 0.2s, color 0.2s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

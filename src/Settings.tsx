@@ -8,6 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Icon, type IconName } from "./icons";
+import { autoUpdates, setAutoUpdates } from "./Updater";
 
 export type SystemInfo = {
   os: string;
@@ -250,6 +251,7 @@ function GeneralTab({
 }) {
   const [version, setVersion] = useState("");
   const [upd, setUpd] = useState<"" | "checking" | "none" | "found">("");
+  const [autoUpd, setAutoUpd] = useState(autoUpdates);
   useEffect(() => {
     getVersion().then(setVersion);
   }, []);
@@ -333,21 +335,38 @@ function GeneralTab({
         {err && <p className="err-text">{err}</p>}
       </Card>
 
-      <Card title="Versión" desc="TaskAI revisa solo si hay versión nueva cada vez que lo abres.">
-        <div className="set-inline">
-          <span className="version-pill">TaskAI {version}</span>
-          <button
-            className="btn"
-            disabled={upd === "checking"}
-            onClick={async () => {
-              setUpd("checking");
-              setUpd(await onCheckUpdates());
-            }}
-          >
-            <Icon name="restore" size={14} /> {upd === "checking" ? "Buscando…" : "Buscar actualizaciones"}
-          </button>
-          {upd === "none" && <span className="set-ok">✓ Tienes la versión más reciente</span>}
-          {upd === "found" && <span className="set-ok">¡Hay una versión nueva! Mira el aviso abajo a la derecha.</span>}
+      <Card
+        title="Versión"
+        desc="Para saber si hay versión nueva, TaskAI consulta la página de descargas de TaskAI en GitHub. No manda tus notas ni ningún dato tuyo."
+      >
+        <div className="switches">
+          <label className="switch-row">
+            <input
+              type="checkbox"
+              checked={autoUpd}
+              onChange={(e) => {
+                setAutoUpd(e.target.checked);
+                setAutoUpdates(e.target.checked);
+              }}
+            />
+            <span className="switch" aria-hidden="true" />
+            <span>Buscar actualizaciones al abrir TaskAI</span>
+          </label>
+          <div className="set-inline">
+            <span className="version-pill">TaskAI {version}</span>
+            <button
+              className="btn"
+              disabled={upd === "checking"}
+              onClick={async () => {
+                setUpd("checking");
+                setUpd(await onCheckUpdates());
+              }}
+            >
+              <Icon name="restore" size={14} /> {upd === "checking" ? "Buscando…" : "Buscar actualizaciones"}
+            </button>
+            {upd === "none" && <span className="set-ok">✓ Tienes la versión más reciente</span>}
+            {upd === "found" && <span className="set-ok">¡Hay una versión nueva! Mira el aviso abajo a la derecha.</span>}
+          </div>
         </div>
       </Card>
     </>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Configuración de artefacto "taskai-instalador" en SignPath: firma el instalador NSIS
+     (que ya trae adentro el taskai.exe firmado). Pegar tal cual en SignPath → proyecto taskai → Artifact configurations. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="TaskAI_*_x64-setup.exe" product-name="TaskAI" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

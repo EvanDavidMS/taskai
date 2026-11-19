@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Configuración de artefacto "taskai-exe" en SignPath: firma el taskai.exe suelto
+     (antes de meterlo al instalador). Pegar tal cual en SignPath → proyecto taskai → Artifact configurations. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="taskai.exe" product-name="TaskAI" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

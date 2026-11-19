@@ -60,10 +60,15 @@ Desde la v1.3.0 las apps instaladas se actualizan solas: al abrir, consultan
 
 ```powershell
 # 1) Escribir las notas en español: "## ⬇ Cómo instalar" + "## ✨ Novedades de la X" (el aviso de la app muestra los puntos de Novedades)
-# 2) Publicar (sube la versión en los 3 archivos, compila firmado, crea latest.json, commit, push y Release):
-.\scripts\publicar.ps1 -Version 1.4.0 -Notas scripts\notas-1.4.0.md
-#    -SinPublicar → solo compila y genera latest.json
+# 2) Publicar: sube la versión en los 3 archivos, commit + push, lanza el workflow
+#    "Compilar y firmar (Windows)" en Actions, espera, baja el instalador, crea AQUÍ su .sig
+#    de actualizaciones con la llave local, latest.json y el Release:
+.\scripts\publicar.ps1 -Version 1.4.1 -Notas scripts\notas-1.4.1.md
+#    -Local       → compila en esta compu (como antes, sin SignPath)
+#    -SinPublicar → compila en esta compu y genera latest.json, sin subir nada
 ```
+
+- **Desde la 1.4.1 se compila en GitHub Actions** (`.github/workflows/compilar-windows.yml`, solo `workflow_dispatch`): requisito de SignPath. El workflow hace `tauri build --no-bundle` → `tauri bundle` (le escribe a `taskai.exe` el tipo "nsis"; por eso se arma una vez ANTES de firmar) → firma `taskai.exe` → `tauri bundle` otra vez (probado: el exe ya marcado no cambia, misma SHA-256) → firma el instalador. Sin el secreto `SIGNPATH_API_TOKEN` compila sin firmar. El `.sig` de las actualizaciones se calcula en la compu de Evan **después** de la firma de SignPath (si no, no coincidiría). El artefacto `TaskAI-windows` trae también el `taskai.exe` suelto, para reportar falsos positivos.
 
 - **Llave privada:** `C:\Users\PC\.tauri\taskai.key` (sin contraseña). **Nunca** va al repo. Si se pierde, las apps instaladas ya no aceptan actualizaciones → Evan debe respaldarla. La pública está en `tauri.conf.json` → `plugins.updater.pubkey`.
 - **Probado de punta a punta (19 nov):** una 1.2.9 de prueba (con `--config` apuntando a un `latest.json` servido en `http://127.0.0.1:8765` y `dangerousInsecureTransportProtocol`) detectó la 1.3.0, la descargó, se instaló sola (modo pasivo, sin las preguntas del desinstalador) y se reabrió.
@@ -129,7 +134,7 @@ Viven en `Documentos\TaskAI` (o la carpeta elegida). Para llevarlas a otra compu
 ```
 
 - `notes_dir: null` → `Documentos\TaskAI`.
-- En `localStorage`: `taskai.theme`, `taskai.accent`, `taskai.model`, `taskai.focus`, `taskai.read`, `taskai.remind` (`{on, lead}`), `taskai.notified`, `taskai.settingsTab`.
+- En `localStorage`: `taskai.theme`, `taskai.accent`, `taskai.model`, `taskai.focus`, `taskai.read`, `taskai.remind` (`{on, lead}`), `taskai.notified`, `taskai.settingsTab`, `taskai.autoUpdate` (`"0"` = no buscar actualizaciones al abrir).
 
 ## 6. Gustos de Evan (UI)
 
@@ -173,13 +178,14 @@ Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
 - En código, quitar lo que parece malware: borrar `Startup\Ollama.lnk` (`remove_ollama_autostart`), `taskkill /F` y `tasklist`, y la instalación silenciosa de Ollama.
 - **Plan acordado con Evan:** en vez del instalador de Ollama, usar su **versión portátil** (`ollama-windows-amd64.zip` de los Releases de Ollama; confirmar que existe y su tamaño). TaskAI la descarga a su propia carpeta (p. ej. `%LOCALAPPDATA%\TaskAI\ollama`) y corre `ollama serve` como **proceso hijo** (guardar el `Child` y apagarlo con `child.kill()`, sin `taskkill` a procesos ajenos). Así no hay ventana de Ollama que confunda, ni arranque con Windows, ni instalador silencioso; desinstalar = borrar esa carpeta + `~\.ollama`. Si el usuario ya tiene Ollama instalado, usar el suyo y no tocarlo.
 - ✅ **Paso 1 hecho en código (19 nov, sin publicar todavía):** `install_ollama` baja `ollama-windows-{amd64|arm64}.zip` (1.5 GB, 2.2 GB descomprimido; CUDA 12/13 + Vulkan) a `%LOCALAPPDATA%\TaskAI\ollama` (descomprime en `.part` y renombra). `spawn_ollama` guarda el `Child` en `OLLAMA_CHILD`; `ollama_stop` solo mata ese hijo y, si el Ollama es ajeno (Windows), solo descarga los modelos y responde `"FREED"` (la app avisa "IA en pausa"). Si el usuario ya tiene el Ollama oficial, se usa ese (`windows_ollama_exe`). Se quitaron `taskkill`, `tasklist`, `/VERYSILENT` y lo de `Ollama.lnk` (también del desinstalador, que ahora borra la carpeta portátil y solo pregunta por `~\.ollama` si no hay Ollama oficial). Probado: descarga + descompresión con el código real y el portátil corriendo en el puerto 11500 encontró `qwen2.5:7b` y usó la RTX 3060 (CUDA, 56 tok/s). **Falta:** probar el asistente completo en una compu sin Ollama, el desinstalador, y publicar.
+- **Paso 3 preparado en código (19 nov, sin publicar):** workflow de Actions, configuraciones de artefacto en `.signpath/` (`taskai-exe`, `taskai-instalador`, con `product-name`/`product-version` que SignPath exige; los dos .exe ya traen ProductName "TaskAI" y la versión), secciones **"Política de firma de código (Code signing policy)"** y **"Privacidad"** en el README (y enlaces en las notas del Release), e interruptor para no buscar actualizaciones al abrir (SignPath pide que toda conexión esté documentada y se pueda apagar). **Falta:** que Evan solicite en <https://signpath.org/apply> (con 2FA activado en GitHub y SignPath); cuando aprueben, crear en SignPath el proyecto `taskai`, la política `release-signing` y las 2 configuraciones (pegar los XML de `.signpath/`; revisar que el comodín `TaskAI_*_x64-setup.exe` sea válido), y en GitHub el secreto `SIGNPATH_API_TOKEN` + la variable `SIGNPATH_ORGANIZATION_ID`.
 - Después: firma de código gratis con **SignPath Foundation** (signpath.org). Requisitos: licencia OSI (GPL-3.0 ✅), repo público ✅, binarios compilados desde el repo en **GitHub Actions** (gratis en repos públicos; Evan **ya aceptó** usarlo para esto), página de "política de firma" con el crédito "Free code signing provided by SignPath.io, certificate by SignPath Foundation". El editor aparece como "SignPath Foundation". Hay que solicitarlo y esperar aprobación.
 - **Orden acordado con Evan (y por qué las dos):** 1) Ollama portátil + quitar lo sospechoso, 2) Evan reporta el falso positivo a Microsoft, 3) SignPath + workflow de Actions que compile, firme y suba al Release. La firma **no sustituye** el código limpio: la detección `!ml` es por comportamiento y puede caer aun firmado; además el cambio de código quita la ventana de Ollama (eso ninguna firma lo arregla), deja de cerrar Ollamas ajenos, y SignPath revisa que lo que firma no se porte como malware.
 
 **Pendiente (siguiente sesión)**
 9. Instaladores de **Linux** (`.deb`/AppImage, compilar en la laptop EndeavourOS) y **macOS** (solo en una Mac o con Actions; Evan no quiere Actions → preguntarle).
-10. Plantilla propia para **Diario** (ej. "Cómo me sentí", "Lo mejor del día").
-11. **Microanimaciones suaves** en toda la interfaz (transiciones al abrir nota, palomear, cambiar de sección, tarjetas).
+10. ~~Plantilla de **Diario**~~ ✅ (sin publicar) `create_note` en "Diario" escribe 4 preguntas (`DIARY_PROMPTS` en `lib.rs` **y** `src/templates.ts`: mantenerlas iguales). `strip_empty_prompts`/`stripEmptyPrompts` quitan las que quedaron sin contestar: así una plantilla vacía cuenta como nota vacía (se descarta), no se manda a la IA, no cuenta palabras y sale "Nota sin título". Prueba: `cargo test --lib`.
+11. ~~**Microanimaciones**~~ ✅ (sin publicar) bloque al final de `App.css`: entrar a la nota, tablero con `key` por sección (vuelve a animar), tarjetas escalonadas (`--i`), punto de la palomita con rebote (`::after`) y tachado que aparece suave; todo se apaga con `prefers-reduced-motion`. Las capturas headless congelan las animaciones: para capturar, apagarlas con un estilo (`?still` en el preview).
 12. **Sonidos**: Evan ya tiene los archivos de audio, solo hay que meterlos (p. ej. al palomear un pendiente, al terminar de ordenar, recordatorio). Pedirle los archivos y dónde los quiere; agregar opción para silenciarlos en Configuración.
 
 ## 9. Límites conocidos
@@ -187,4 +193,4 @@ Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
 - El 7B a veces malinterpreta palabras muy mal escritas (leyó "covivi" como "comí").
 - Los recordatorios solo funcionan con TaskAI abierto.
 - El instalador no tiene firma digital → Windows muestra "Windows protegió su PC" (es de paga).
-- El workflow de Actions (`instalador-windows.yml`) sigue siendo manual y solo Windows.
+- El workflow de Actions (`compilar-windows.yml`) es manual y solo Windows.

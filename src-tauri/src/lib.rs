@@ -242,6 +242,30 @@ fn is_image_line(l: &str) -> bool {
     l.starts_with("![") && l.ends_with(')')
 }
 
+/// Plantilla de las notas nuevas de "Diario". (Misma lista en `src/templates.ts`: si cambias una, cambia la otra.)
+const DIARY_FOLDER: &str = "Diario";
+const DIARY_PROMPTS: [&str; 4] = ["Cómo me sentí:", "Lo mejor del día:", "Lo que aprendí o pensé:", "Mañana quiero:"];
+
+fn diary_template() -> String {
+    DIARY_PROMPTS.map(|p| format!("{p} ")).join("\n\n") + "\n"
+}
+
+/// Quita las preguntas de la plantilla que se quedaron sin contestar (la pregunta sola, seguida de
+/// otra pregunta o del final). Así una nota con la plantilla vacía cuenta como vacía.
+fn strip_empty_prompts(s: &str) -> String {
+    let is_prompt = |l: &str| DIARY_PROMPTS.contains(&l.trim());
+    let lines: Vec<&str> = s.lines().collect();
+    lines
+        .iter()
+        .enumerate()
+        .filter(|(i, l)| {
+            !is_prompt(l) || lines[i + 1..].iter().find(|n| !n.trim().is_empty()).is_some_and(|n| !is_prompt(n))
+        })
+        .map(|(_, l)| *l)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn title_of(content: &str) -> String {
     content
         .lines()
@@ -278,7 +302,7 @@ fn list_notes() -> Result<Vec<NoteMeta>, String> {
                 continue;
             }
             let id = path.file_stem().unwrap().to_string_lossy().to_string();
-            let content = fs::read_to_string(&path).unwrap_or_default();
+            let content = strip_empty_prompts(&fs::read_to_string(&path).unwrap_or_default());
             let modified = entry
                 .metadata()
                 .and_then(|m| m.modified())
@@ -427,7 +451,8 @@ fn create_note(folder: Option<String>) -> Result<String, String> {
         .map_err(|e| e.to_string())?
         .as_millis();
     let id = format!("nota-{ms}");
-    fs::write(dir.join(format!("{id}.md")), "").map_err(|e| e.to_string())?;
+    let start = if folder == DIARY_FOLDER { diary_template() } else { String::new() };
+    fs::write(dir.join(format!("{id}.md")), start).map_err(|e| e.to_string())?;
     // Si el usuario la creó dentro de una carpeta concreta, esa es su decisión.
     if folder != INBOX {
         let mut meta = load_meta();
@@ -613,7 +638,7 @@ fn empty_trash() -> Result<(), String> {
 
 /// Una nota sin texto ni título no vale la pena guardarla: se borra del todo (sin papelera).
 fn is_blank(id: &str, path: &PathBuf, meta: &HashMap<String, NoteInfo>) -> bool {
-    let content = fs::read_to_string(path).unwrap_or_default();
+    let content = strip_empty_prompts(&fs::read_to_string(path).unwrap_or_default());
     content.trim().is_empty() && meta.get(id).map(|m| m.title.is_empty() && !m.pinned).unwrap_or(true)
 }
 fn remove_blank(id: &str, path: &PathBuf, meta: &mut HashMap<String, NoteInfo>) {
@@ -1650,4 +1675,22 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plantilla_de_diario_vacia_cuenta_como_vacia() {
+        assert_eq!(strip_empty_prompts(&diary_template()).trim(), "");
+        // Lo contestado se queda; las preguntas sin contestar se van
+        let a_medias = "Cómo me sentí: muy bien\n\nLo mejor del día: \n\nLo que aprendí o pensé:\nque Rust es genial\n\nMañana quiero: ";
+        assert_eq!(
+            strip_empty_prompts(a_medias),
+            "Cómo me sentí: muy bien\n\n\nLo que aprendí o pensé:\nque Rust es genial\n"
+        );
+        // Notas normales no cambian
+        assert_eq!(strip_empty_prompts("hola\nmundo"), "hola\nmundo");
+    }
 }

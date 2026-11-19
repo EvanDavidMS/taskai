@@ -69,7 +69,7 @@ La primera vez, TaskAI te guía en 6 pasos:
 1. **Tu nombre.**
 2. **Tema:** claro, oscuro o el de tu sistema.
 3. **Dónde guardar tus notas** (por defecto `Documentos\TaskAI`).
-4. **La IA:** si no tienes Ollama, pica **⬇ Instalar Ollama automáticamente** y TaskAI descarga el instalador oficial, lo instala en silencio y lo enciende. No tienes que hacer nada más.
+4. **La IA:** si no tienes Ollama, pica **⬇ Instalar Ollama automáticamente** y TaskAI descarga la versión portátil oficial (≈1.5 GB) dentro de su propia carpeta y la enciende. Sin instaladores ni ventanas extra. Si ya tenías Ollama, TaskAI usa el tuyo.
 5. **El modelo** (el "cerebro" de la IA). Elige uno y pica **⬇ Descargar y continuar**; verás una barra de progreso. Ve la tabla de abajo.
 6. **¡Listo!** Escribe tu primera nota.
 
@@ -137,7 +137,13 @@ Nada y no. TaskAI y Ollama son gratis, no hay cuentas, suscripciones ni anuncios
 <details>
 <summary><b>¿Mis notas se suben a internet?</b></summary>
 
-No. La IA corre en tu computadora. TaskAI solo se conecta a internet para descargar Ollama y el modelo la primera vez.
+No. La IA corre en tu computadora. Ve la [política de privacidad](#privacidad).
+</details>
+
+<details>
+<summary><b>Windows Defender dice que TaskAI es un virus</b></summary>
+
+Es un falso positivo (la detección `Trojan:Win32/Bearfoos.A!ml` es de "aprendizaje automático": adivina por cómo se porta el programa) y ya lo reportamos a Microsoft. Para recuperarlo: *Seguridad de Windows → Protección antivirus → Historial de protección*, busca TaskAI y elige **Permitir**. Desde la 1.4.1 se quitó lo que lo confundía; y estamos tramitando la [firma de código](#política-de-firma-de-código-code-signing-policy) gratis para proyectos libres.
 </details>
 
 <details>
@@ -169,9 +175,9 @@ En `Documentos\TaskAI` (o la carpeta que elegiste; la ves en **Configuración �
 <details>
 <summary><b>¿Cómo lo desinstalo?</b></summary>
 
-Configuración de Windows → Aplicaciones → TaskAI → Desinstalar. El desinstalador te pregunta:
+Configuración de Windows → Aplicaciones → TaskAI → Desinstalar. Se borra el Ollama que descargó TaskAI y el desinstalador te pregunta:
 
-1. **¿Quitar también la IA?** Desinstala Ollama y borra los modelos descargados (varios GB). Di que no si usas Ollama con otros programas.
+1. **¿Borrar también los modelos de IA?** (varios GB). Solo pregunta si no tienes otro Ollama instalado: si lo tienes, los modelos son suyos y no se tocan.
 2. **¿Borrar también tus notas?** Si dices que no, se quedan en `Documentos\TaskAI`.
 
 Si marcas **borrar los datos de la app**, también se borra tu configuración. Así no queda nada en tu computadora.
@@ -213,6 +219,30 @@ pnpm tauri build    # instaladores en src-tauri/target/release/bundle/
 | Markdown | `marked` + `DOMPurify` |
 
 Detalles técnicos y decisiones de diseño en [`CLAUDE.md`](CLAUDE.md) y [`HANDOFF.md`](HANDOFF.md).
+
+## Privacidad
+
+Tus notas **nunca salen de tu computadora**: la IA (Ollama) corre en tu compu y TaskAI no tiene cuentas, anuncios ni estadísticas de uso. TaskAI solo se conecta a internet para esto:
+
+| Cuándo | A dónde | Qué se manda | ¿Se puede apagar? |
+|---|---|---|---|
+| Al abrir TaskAI, para ver si hay versión nueva | `github.com/EvanDavidMS/taskai` (Releases) | Nada tuyo: solo se descarga `latest.json` | Sí: *Configuración → General → Versión* |
+| Cuando tú instalas la IA desde el asistente | `github.com/ollama/ollama` (Releases) | Nada tuyo: se descarga Ollama | Solo pasa si tú lo pides |
+| Cuando tú descargas un modelo | `registry.ollama.ai` (lo descarga Ollama) | Nada tuyo: se descarga el modelo | Solo pasa si tú lo pides |
+
+Como cualquier descarga, esos sitios ven tu dirección IP. Sus políticas: [GitHub](https://docs.github.com/es/site-policy/privacy-policies/github-general-privacy-statement) y [Ollama](https://ollama.com/privacy).
+
+## Política de firma de código (Code signing policy)
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+> *En trámite:* mientras SignPath aprueba el proyecto, los instaladores todavía no están firmados.
+
+- Los instaladores de Windows se compilan **en GitHub Actions** directamente desde el código de este repositorio ([workflow](.github/workflows/compilar-windows.yml)) y se firman ahí mismo; no se firma nada compilado en una computadora personal.
+- Se firman `taskai.exe` y el instalador `TaskAI_<versión>_x64-setup.exe`.
+- **Autores y revisores (committers and reviewers):** [Evan](https://github.com/EvanDavidMS). Los cambios de otras personas (pull requests) los revisa él antes de aceptarlos.
+- **Aprobadores (approvers):** [Evan](https://github.com/EvanDavidMS). Cada firma se aprueba a mano.
+- Privacidad: ve la sección [Privacidad](#privacidad).
 
 ## Licencia
 

@@ -13,7 +13,8 @@ import { checkReminders } from "./reminders";
 import TasksView, { type WhenValue } from "./TasksView";
 import TrashView from "./TrashView";
 import type { Update } from "@tauri-apps/plugin-updater";
-import { UpdateBanner, findUpdate } from "./Updater";
+import { UpdateBanner, autoUpdates, findUpdate } from "./Updater";
+import { DIARY_FOLDER, isBlankText, stripEmptyPrompts } from "./templates";
 import { mdToText, printPdf, saveMarkdown } from "./exporter";
 import "./App.css";
 
@@ -33,8 +34,8 @@ type Note = { content: string; structured: string; title: string };
 // Imágenes pegadas con Ctrl + V: en el texto quedan como ![imagen](img/<nombre>)
 const IMG_RE = /!\[[^\]]*\]\(img\/([\w.-]+)\)/g;
 const imagesIn = (s: string) => [...s.matchAll(IMG_RE)].map((m) => m[1]);
-/** Lo que se le manda a la IA: el texto sin las referencias a imágenes. */
-const stripImages = (s: string) => s.replace(IMG_RE, "").replace(/\n{3,}/g, "\n\n").trim();
+/** Lo que se le manda a la IA: el texto sin las referencias a imágenes ni las preguntas de la plantilla sin contestar. */
+const stripImages = (s: string) => stripEmptyPrompts(s).replace(IMG_RE, "").replace(/\n{3,}/g, "\n\n").trim();
 /** Clave para saber si algo cambió desde la última vez que ordenó la IA. */
 const aiKeyOf = (title: string, text: string) => title.trim() + "\u0000" + text;
 
@@ -527,7 +528,7 @@ export default function App() {
   // Actualizaciones: revisa en GitHub unos segundos después de abrir (sin estorbar el arranque)
   const [update, setUpdate] = useState<Update | null>(null);
   useEffect(() => {
-    if (!onboarded) return;
+    if (!onboarded || !autoUpdates()) return;
     const t = setTimeout(() => findUpdate().then(setUpdate), 6000);
     return () => clearTimeout(t);
   }, [onboarded]);
@@ -574,7 +575,7 @@ export default function App() {
       await invoke("save_note", { id: activeId, content });
       await invoke("set_title", { id: activeId, title });
       // Si la dejaste en blanco, no se queda guardada una "Nota sin título" vacía
-      if (!content.trim() && !title.trim()) await invoke("discard_if_blank", { id: activeId });
+      if (isBlankText(content) && !title.trim()) await invoke("discard_if_blank", { id: activeId });
     } catch {
       /* la nota ya no existe (la borraron): no hay nada que guardar */
     }
@@ -660,7 +661,7 @@ export default function App() {
     if (creatingRef.current) return;
     const focusEditor = () =>
       requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".editor textarea")?.focus());
-    if (activeId && !content.trim() && !title.trim()) {
+    if (activeId && isBlankText(content) && !title.trim()) {
       setReading(false);
       focusEditor();
       setToast({ text: "Ya tienes una nota en blanco abierta: escribe aquí ✍" });
@@ -668,7 +669,15 @@ export default function App() {
     }
     creatingRef.current = true;
     try {
-      const blank = notes.find((n) => n.id !== activeId && !n.preview && n.title === "Nota sin título" && !n.pinned);
+      const blank = notes.find(
+        (n) =>
+          n.id !== activeId &&
+          !n.preview &&
+          n.title === "Nota sin título" &&
+          !n.pinned &&
+          // misma carpeta: que "Nueva nota" en Escuela no te abra una plantilla de Diario (ni al revés)
+          (folderFilter ? n.folder === folderFilter : n.folder !== DIARY_FOLDER),
+      );
       if (blank) {
         await openNote(blank.id);
       } else {
@@ -677,6 +686,20 @@ export default function App() {
         await openNote(id);
       }
       setReading(false);
+      if (folderFilter === DIARY_FOLDER) {
+        // Plantilla de Diario: el cursor va justo después de la primera pregunta ("Cómo me sentí: |")
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const ta = document.querySelector<HTMLTextAreaElement>(".editor textarea");
+            if (!ta) return;
+            ta.focus();
+            const nl = ta.value.indexOf("\n");
+            const end = nl < 0 ? ta.value.length : nl;
+            ta.setSelectionRange(end, end);
+          }),
+        );
+        return;
+      }
       focusEditor();
     } finally {
       creatingRef.current = false;
@@ -997,7 +1020,8 @@ export default function App() {
     });
   }
 
-  const words = content.trim() ? content.trim().split(/\s+/).length : 0;
+  const typed = stripEmptyPrompts(content).trim(); // las preguntas de la plantilla no cuentan
+  const words = typed ? typed.split(/\s+/).length : 0;
 
   // Línea donde está el cursor (para resaltar su número).
   const [caretLine, setCaretLine] = useState(0);
@@ -1207,7 +1231,8 @@ export default function App() {
       {/* ---------- Área principal: tablero de notas o la nota abierta ---------- */}
       <main className="main">
         {!activeId ? (
-          <div className="board">
+          // La key hace que el tablero vuelva a entrar animado al cambiar de sección o carpeta
+          <div className="board" key={`${section}|${folderFilter ?? ""}|${tagFilter ?? ""}`}>
             <header className="board-head">
               <button className="icon-btn only-narrow" title="Carpetas" onClick={() => setListOpen(true)}>
                 <Icon name="menu" size={18} />
@@ -1324,9 +1349,10 @@ export default function App() {
                   </h2>
                 )}
               <div className="cards">
-                {s.list.map((n) => (
+                {s.list.map((n, i) => (
                   <div
                     key={n.id}
+                    style={{ "--i": i } as CSSProperties}
                     role="button"
                     tabIndex={0}
                     className={`card-note ${n.favorite ? "fav" : ""} ${dragId === n.id ? "dragging" : ""}`}

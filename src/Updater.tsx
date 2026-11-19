@@ -5,6 +5,22 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { Icon } from "./icons";
 
+/** ¿Buscar actualizaciones solo al abrir TaskAI? (Configuración → General → Versión). Encendido por defecto. */
+export function autoUpdates(): boolean {
+  try {
+    return localStorage.getItem("taskai.autoUpdate") !== "0";
+  } catch {
+    return true;
+  }
+}
+export function setAutoUpdates(on: boolean) {
+  try {
+    localStorage.setItem("taskai.autoUpdate", on ? "1" : "0");
+  } catch {
+    /* sin almacenamiento: se queda encendido */
+  }
+}
+
 export async function findUpdate(): Promise<Update | null> {
   try {
     return await check();
