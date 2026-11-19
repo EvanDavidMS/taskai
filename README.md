@@ -143,7 +143,7 @@ No. La IA corre en tu computadora. Ve la [política de privacidad](#privacidad).
 <details>
 <summary><b>Windows Defender dice que TaskAI es un virus</b></summary>
 
-Es un falso positivo (la detección `Trojan:Win32/Bearfoos.A!ml` es de "aprendizaje automático": adivina por cómo se porta el programa) y ya lo reportamos a Microsoft. Para recuperarlo: *Seguridad de Windows → Protección antivirus → Historial de protección*, busca TaskAI y elige **Permitir**. Desde la 1.4.1 se quitó lo que lo confundía; y estamos tramitando la [firma de código](#política-de-firma-de-código-code-signing-policy) gratis para proyectos libres.
+Es un falso positivo (la detección `Trojan:Win32/Bearfoos.A!ml` es de "aprendizaje automático": adivina por cómo se porta el programa) y ya lo reportamos a Microsoft. Para recuperarlo: *Seguridad de Windows → Protección antivirus → Historial de protección*, busca TaskAI y elige **Permitir**. Desde la 1.4.1 se quitó lo que lo confundía, y más adelante vamos a solicitar la [firma de código](#política-de-firma-de-código-code-signing-policy) gratis para proyectos libres.
 </details>
 
 <details>
@@ -234,12 +234,10 @@ Como cualquier descarga, esos sitios ven tu dirección IP. Sus políticas: [GitH
 
 ## Política de firma de código (Code signing policy)
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+> **Próximamente.** TaskAI va a solicitar la firma de código gratis que [SignPath Foundation](https://signpath.org) da a proyectos de código abierto. Mientras tanto, los instaladores **no están firmados** (por eso Windows puede mostrar avisos). Cuando se apruebe, aquí dirá: *Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).*
 
-> *En trámite:* mientras SignPath aprueba el proyecto, los instaladores todavía no están firmados.
-
-- Los instaladores de Windows se compilan **en GitHub Actions** directamente desde el código de este repositorio ([workflow](.github/workflows/compilar-windows.yml)) y se firman ahí mismo; no se firma nada compilado en una computadora personal.
-- Se firman `taskai.exe` y el instalador `TaskAI_<versión>_x64-setup.exe`.
+- Los instaladores de Windows se compilan **en GitHub Actions** directamente desde el código de este repositorio ([workflow](.github/workflows/compilar-windows.yml)), no en una computadora personal. Ahí mismo se firmarán.
+- Se firmarán `taskai.exe` y el instalador `TaskAI_<versión>_x64-setup.exe`.
 - **Autores y revisores (committers and reviewers):** [Evan](https://github.com/EvanDavidMS). Los cambios de otras personas (pull requests) los revisa él antes de aceptarlos.
 - **Aprobadores (approvers):** [Evan](https://github.com/EvanDavidMS). Cada firma se aprueba a mano.
 - Privacidad: ve la sección [Privacidad](#privacidad).

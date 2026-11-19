@@ -1,6 +1,6 @@
 [package]
 name = "taskai"
-version = "1.4.0"
+version = "1.4.1"
 description = "Apuntes que la IA ordena en vivo"
 authors = ["Evan"]
 license = "GPL-3.0-only"
