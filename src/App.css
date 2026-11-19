@@ -274,7 +274,7 @@ input, textarea, select { font: inherit; color: inherit; }
   position: relative; display: flex; flex-direction: column; gap: 8px; min-height: 168px; padding: 16px 18px 14px;
   background: var(--card); border: 1px solid var(--card-line); border-radius: 18px; box-shadow: var(--card-shadow);
   cursor: pointer; text-align: left; transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s;
-  animation: card-in 0.25s ease both;
+  animation: card-in 0.25s ease backwards;
 }
 .card-note:hover { transform: translateY(-2px); box-shadow: var(--card-shadow-hover); border-color: var(--accent-line); }
 .card-note:focus-visible { outline-offset: 2px; }
@@ -333,7 +333,7 @@ input, textarea, select { font: inherit; color: inherit; }
 .tlist > :last-child { border-radius: 0 0 16px 16px; }
 .tlist > :only-child { border-radius: 16px; }
 .trow {
-  display: flex; align-items: center; gap: 14px; padding: 12px 16px; animation: card-in 0.2s ease both;
+  display: flex; align-items: center; gap: 14px; padding: 12px 16px; animation: card-in 0.2s ease backwards;
   cursor: pointer; user-select: none; transition: background 0.12s;
 }
 .trow:focus-visible { outline-offset: -2px; }
@@ -750,7 +750,7 @@ textarea::placeholder { color: var(--faint); }
 .set-tab.on { background: var(--card); color: var(--heading); font-weight: 550; box-shadow: var(--card-shadow); border: 1px solid var(--card-line); padding: 8px 11px; }
 .set-tab.on .ico { color: var(--accent); }
 .set-warn { width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: var(--err); }
-.set-body { display: flex; flex-direction: column; gap: 16px; min-width: 0; animation: card-in 0.2s ease both; }
+.set-body { display: flex; flex-direction: column; gap: 16px; min-width: 0; animation: card-in 0.2s ease backwards; }
 .set-card {
   padding: 20px 22px; background: var(--card); border: 1px solid var(--card-line); border-radius: 18px; box-shadow: var(--card-shadow);
 }
@@ -1095,18 +1095,23 @@ kbd {
    Cortas (≤ 0.3 s) y sin estorbar. Si en Windows/Linux está activado "reducir animaciones", se apagan (ver el final). */
 :root { --ease-out: cubic-bezier(0.22, 1, 0.36, 1); --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); }
 
+/* OJO: siempre `backwards`, nunca `both`/`forwards`. Una animación que conserva su estado final deja
+   al elemento en su propia capa, y entonces los menús de la barra (Exportar, cambiar carpeta)
+   quedaban DEBAJO del panel de la nota. Además la barra va por encima de los paneles. */
+.toolbar { position: relative; z-index: 5; }
+
 /* Abrir una nota: la barra aparece y los paneles suben un poquito */
-.toolbar { animation: fade 0.18s ease both; }
-.split { animation: note-in 0.28s var(--ease-out) both; }
+.toolbar { animation: fade 0.18s ease backwards; }
+.split { animation: note-in 0.28s var(--ease-out) backwards; }
 @keyframes note-in { from { opacity: 0; transform: translateY(10px) scale(0.995); } }
 /* Cambiar entre Apuntes/Ordenada (pantalla angosta) o entrar a Lectura: el panel se funde */
-.raw-pane, .ai-pane { animation: fade 0.2s ease both; }
+.raw-pane, .ai-pane { animation: fade 0.2s ease backwards; }
 
 /* Cambiar de sección o carpeta: el tablero entra de nuevo (App.tsx le cambia la key) */
-.board-head, .board-bar { animation: card-in 0.26s var(--ease-out) both; }
+.board-head, .board-bar { animation: card-in 0.26s var(--ease-out) backwards; }
 /* Las tarjetas llegan una tras otra (App.tsx pone --i = su posición) */
 .card-note {
-  animation: card-in 0.34s var(--ease-out) both;
+  animation: card-in 0.34s var(--ease-out) backwards;
   animation-delay: calc(min(var(--i, 0), 14) * 22ms);
 }
 .card-note:active { transform: translateY(0) scale(0.985); transition-duration: 0.08s; }
