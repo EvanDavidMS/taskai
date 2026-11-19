@@ -189,8 +189,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Compilar (.deb, .rpm y AppImage)
-        run: pnpm tauri build --verbose --bundles deb,rpm,appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Compilar (.deb y .rpm)
+        run: pnpm tauri build --bundles deb,rpm --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      # El AppImage se arma a partir del .deb, pero linuxdeploy exige el ícono por NOMBRE (no ruta
+      # completa como en linux/taskai.desktop) → aquí va con linux/appimage.desktop. Da igual para el
+      # usuario: al abrirse, TaskAI escribe su propio acceso directo (integrate_linux en lib.rs).
+      - name: Compilar (AppImage)
+        run: pnpm tauri bundle --verbose --bundles appimage --config '{"bundle":{"createUpdaterArtifacts":false,"linux":{"deb":{"desktopTemplate":"./linux/appimage.desktop"}}}}'
 
       - name: Juntar el resultado
         run: |
