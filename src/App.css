@@ -462,7 +462,11 @@ button.twhen:hover { box-shadow: 0 0 0 2px var(--accent-line); }
   padding: 10px 16px 10px 12px; border-bottom: 1px solid var(--line); min-height: 58px;
 }
 .crumbs { flex: 1; min-width: 0; font-weight: 600; color: var(--heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 4px; }
-.tools { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.tools { display: flex; align-items: center; gap: 8px; flex-shrink: 1; min-width: 0; }
+/* Si no cabe la barra, lo único que se encoge es el texto del estado (con "…"); los botones no */
+.tools > * { flex-shrink: 0; }
+.tools > .status { flex-shrink: 1; min-width: 0; }
+.status-label { overflow: hidden; text-overflow: ellipsis; }
 .back-btn {
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px 7px 10px; border-radius: 99px;
   color: var(--muted); font-weight: 500; border: 1px solid var(--line); background: var(--panel-2); white-space: nowrap;
@@ -929,6 +933,10 @@ kbd {
   .trow { flex-wrap: wrap; gap: 10px 14px; }
   .twhen { margin-left: 34px; }
   .back-btn { padding: 7px 9px; }
+}
+/* Mediano: la barra no alcanza para todo → el estado queda solo como puntito (el texto va en el title) */
+@container (max-width: 900px) {
+  .status-label { display: none; }
 }
 @container (max-width: 480px) {
   .folder-pick .ftag-label, .caret { display: none; }
