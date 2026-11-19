@@ -128,7 +128,7 @@ export default function Onboarding({
   const modelReady = installed.includes(choice);
   const stageLabel: Record<Install["stage"], string> = {
     download: "Descargando Ollama…",
-    install: "Instalando… (puede tardar un minuto)",
+    install: "Descomprimiendo… (puede tardar un minuto)",
     start: "Encendiendo Ollama…",
     ready: "¡Listo!",
   };
@@ -256,7 +256,19 @@ export default function Onboarding({
             ) : ollama?.installed ? (
               <div className="hint-box">
                 Ollama está instalado pero apagado.{" "}
-                {os === "windows" && "Ábrelo desde el menú Inicio."}
+                {os === "windows" && (
+                  <button
+                    className="btn"
+                    disabled={checking}
+                    onClick={async () => {
+                      setChecking(true);
+                      await invoke("ollama_start").catch((e) => setInstallError(String(e)));
+                      await check();
+                    }}
+                  >
+                    ⏻ Encender
+                  </button>
+                )}
                 {os === "macos" && "Ábrelo desde Aplicaciones."}
                 {os === "linux" && <Cmd>sudo systemctl enable --now ollama</Cmd>}
               </div>
@@ -266,8 +278,12 @@ export default function Onboarding({
                   <>
                     <b>{stageLabel[install.stage]}</b>
                     <div className="progress">
-                      <div style={{ width: `${install.stage === "download" ? (install.percent ?? 0) : 100}%` }} />
-                      <span>{install.stage === "download" && install.percent != null ? `${install.percent.toFixed(0)}%` : ""}</span>
+                      <div style={{ width: `${install.stage === "download" || install.stage === "install" ? (install.percent ?? 0) : 100}%` }} />
+                      <span>
+                        {(install.stage === "download" || install.stage === "install") && install.percent != null
+                          ? `${install.percent.toFixed(0)}%`
+                          : ""}
+                      </span>
                     </div>
                   </>
                 ) : (
@@ -275,7 +291,10 @@ export default function Onboarding({
                     <button className="btn primary big" onClick={autoInstall}>
                       ⬇ Instalar Ollama automáticamente
                     </button>
-                    <p className="muted small">Descarga el instalador oficial de ollama.com (≈1 GB) y lo instala por ti.</p>
+                    <p className="muted small">
+                      Descarga Ollama de su página oficial (≈1.5 GB, ocupa ≈2.2 GB) y lo guarda dentro de TaskAI. Sin
+                      instaladores ni ventanas extra.
+                    </p>
                   </>
                 )}
                 {installError && <p className="err-text">{installError}</p>}

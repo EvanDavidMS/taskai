@@ -11,7 +11,7 @@ Apuntes donde tú escribes rápido y desordenado, y una IA que corre **en tu pro
 ![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D6?logo=windows&logoColor=white)
 ![IA local](https://img.shields.io/badge/IA_local-Ollama-111)
 ![Gratis](https://img.shields.io/badge/precio-gratis-2ea44f)
-![Licencia MIT](https://img.shields.io/badge/licencia-MIT-green)
+![Licencia GPL v3](https://img.shields.io/badge/licencia-GPL%20v3-blue)
 
 </div>
 
@@ -216,4 +216,16 @@ Detalles técnicos y decisiones de diseño en [`CLAUDE.md`](CLAUDE.md) y [`HANDO
 
 ## Licencia
 
-[MIT](LICENSE) © Evan
+TaskAI es software libre bajo la licencia [GNU GPL v3](LICENSE) © 2026 Evan.
+
+En pocas palabras:
+
+- ✅ Puedes **usarlo gratis**, estudiar el código y **modificarlo** a tu gusto.
+- ✅ Puedes **compartirlo**, con tus cambios o sin ellos, siempre que sea con **todo el código fuente** y bajo esta misma licencia (GPL v3), dando crédito al autor original.
+- ❌ **No** puedes tomar TaskAI, cerrar el código y distribuirlo (ni venderlo) como un programa propio.
+
+Las versiones hasta la 1.4.0 se publicaron con licencia MIT; desde la 1.4.1 aplica la GPL v3.
+
+### Nombre y logo
+
+La licencia cubre el código, no la marca. El nombre **TaskAI** y su logo identifican la versión oficial de Evan: si publicas una versión modificada, ponle **otro nombre y otro logo** y aclara que no es la versión oficial.

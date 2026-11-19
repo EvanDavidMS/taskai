@@ -38,7 +38,7 @@
     "shortDescription": "Apuntes que una IA local ordena en vivo",
     "longDescription": "Escribe rápido y desordenado; TaskAI usa una IA local (Ollama) para ordenar tus apuntes, sacar pendientes con fecha y acomodarlos en carpetas. Gratis y privado.",
     "category": "Productivity",
-    "copyright": "© 2026 Evan · MIT",
+    "copyright": "© 2026 Evan · GPL v3",
     "windows": {
       "wix": {
         "language": "es-ES"

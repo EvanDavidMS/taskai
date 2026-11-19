@@ -589,8 +589,8 @@ function AiTab({
       >
         <AutoPower />
         <p className="set-note">
-          Si un día desinstalas TaskAI, el desinstalador te pregunta si también quieres quitar Ollama y los modelos,
-          para no dejar nada en tu computadora.
+          Si un día desinstalas TaskAI, se borra el Ollama que descargó TaskAI y el desinstalador te pregunta si
+          también quieres borrar los modelos, para no dejar nada en tu computadora.
         </p>
       </Card>
 

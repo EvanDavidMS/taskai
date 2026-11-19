@@ -1,6 +1,7 @@
 ﻿; TaskAI: pasos extra del desinstalador de Windows (Tauri los inserta en su instalador NSIS).
-; Al desinstalar de verdad (no al actualizar de versión) pregunta si también quitar la IA y las notas,
-; para que no quede nada regado. Las dos preguntas tienen "No" por defecto.
+; Al desinstalar de verdad (no al actualizar de versión) borra el Ollama portátil de TaskAI y pregunta
+; si también quitar los modelos y las notas, para que no quede nada regado. Las preguntas tienen "No"
+; por defecto. Un Ollama que el usuario instaló por su cuenta NO se toca.
 
 !macro NSIS_HOOK_POSTUNINSTALL
   ${If} $UpdateMode <> 1
@@ -13,33 +14,19 @@
       RmDir /r "$APPDATA\TaskAI"
     ${EndIf}
 
-    ; ----- La IA: Ollama y los modelos descargados -----
-    IfFileExists "$LOCALAPPDATA\Programs\Ollama\ollama.exe" 0 taskai_sin_ollama
+    ; ----- La IA -----
+    ; El Ollama portátil que descargó TaskAI es parte de la app: se borra siempre
+    RmDir /r "$LOCALAPPDATA\TaskAI\ollama"
+    RmDir "$LOCALAPPDATA\TaskAI" ; solo si quedó vacía
+
+    ; Los modelos descargados (~\.ollama). Si el usuario tiene su propio Ollama, son de él: no preguntamos.
+    IfFileExists "$PROFILE\.ollama\models\*.*" 0 taskai_sin_modelos
+    IfFileExists "$LOCALAPPDATA\Programs\Ollama\ollama.exe" taskai_sin_modelos 0
     MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2|MB_TOPMOST \
-      "¿Quieres quitar también la IA de tu computadora?$\n$\nSe desinstalará Ollama y se borrarán los modelos descargados (pueden ocupar varios GB).$\n$\nElige «No» si usas Ollama con otros programas." \
-      IDNO taskai_sin_ollama
-      nsExec::Exec 'taskkill /F /IM "ollama app.exe"'
-      Pop $0
-      nsExec::Exec 'taskkill /F /IM "ollama.exe"'
-      Pop $0
-      ; Su propio desinstalador (Inno Setup) quita el programa y su registro en "Aplicaciones"
-      IfFileExists "$LOCALAPPDATA\Programs\Ollama\unins000.exe" 0 taskai_restos
-        ExecWait '"$LOCALAPPDATA\Programs\Ollama\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
-        ; El desinstalador de Inno se relanza desde una copia temporal: esperamos (máx. 20 s) a que termine
-        StrCpy $R9 0
-        taskai_espera:
-          IfFileExists "$LOCALAPPDATA\Programs\Ollama\ollama.exe" 0 taskai_restos
-          IntOp $R9 $R9 + 1
-          IntCmp $R9 40 taskai_restos
-          Sleep 500
-          Goto taskai_espera
-      taskai_restos:
-      ; Modelos (~\.ollama), registros y lo que haya quedado
+      "¿Borrar también los modelos de IA descargados?$\n$\n$PROFILE\.ollama$\n$\nPueden ocupar varios GB. Elige «No» si los usas con otros programas." \
+      IDNO taskai_sin_modelos
       RmDir /r "$PROFILE\.ollama"
-      RmDir /r "$LOCALAPPDATA\Ollama"
-      RmDir /r "$LOCALAPPDATA\Programs\Ollama"
-      Delete "$SMSTARTUP\Ollama.lnk"
-    taskai_sin_ollama:
+    taskai_sin_modelos:
 
     ; ----- Las notas (solo la carpeta de siempre: Documentos\TaskAI) -----
     IfFileExists "$DOCUMENTS\TaskAI\*.*" 0 taskai_fin

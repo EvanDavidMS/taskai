@@ -500,13 +500,19 @@ export default function App() {
     async (on: boolean) => {
       setPower(on ? "starting" : "stopping");
       try {
-        await invoke(on ? "ollama_start" : "ollama_stop");
+        const res = await invoke<string | null>(on ? "ollama_start" : "ollama_stop");
         if (on) await checkAi();
         else {
           setModels([]);
           setAi("off");
         }
-        setToast({ text: on ? "IA encendida" : "IA apagada: se liberó la memoria de tu tarjeta de video" });
+        setToast({
+          text: on
+            ? "IA encendida"
+            : res === "FREED"
+              ? "IA en pausa: se liberó la memoria de tu tarjeta de video (Ollama lo abrió otro programa, así que sigue abierto)"
+              : "IA apagada: se liberó la memoria de tu tarjeta de video",
+        });
       } catch (e) {
         const msg = String(e);
         setToast({ text: msg.includes("NOT_INSTALLED") ? "Primero instala Ollama (Configuración → Inteligencia artificial)" : msg });

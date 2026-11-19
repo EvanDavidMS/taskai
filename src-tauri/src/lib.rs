@@ -851,13 +851,28 @@ struct OllamaStatus {
     running: bool,
 }
 
-/// Ruta donde el instalador oficial deja Ollama en Windows.
+/// Ruta donde el instalador oficial deja Ollama en Windows (si el usuario lo instaló por su cuenta).
 fn windows_ollama_dir() -> Option<PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Programs").join("Ollama"))
 }
 
+/// Ollama portátil de TaskAI (Windows): `%LOCALAPPDATA%\TaskAI\ollama`. Es parte de la app:
+/// no tiene instalador, ni ventana, ni arranque con Windows. Los modelos van a `~\.ollama` como siempre.
+fn portable_ollama_dir() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("TaskAI").join("ollama"))
+}
+
+/// El `ollama.exe` que usa TaskAI en Windows: primero el del usuario (si ya tenía Ollama), si no, el portátil.
+fn windows_ollama_exe() -> Option<PathBuf> {
+    [windows_ollama_dir(), portable_ollama_dir()]
+        .into_iter()
+        .flatten()
+        .map(|d| d.join("ollama.exe"))
+        .find(|p| p.exists())
+}
+
 fn ollama_binary_exists() -> bool {
-    if cfg!(windows) && windows_ollama_dir().is_some_and(|d| d.join("ollama.exe").exists()) {
+    if cfg!(windows) && windows_ollama_exe().is_some() {
         return true;
     }
     let mut cmd = std::process::Command::new("ollama");
@@ -898,8 +913,9 @@ struct InstallProgress {
     percent: Option<f64>,
 }
 
-/// Windows: descarga el instalador oficial de Ollama, lo instala en silencio y lo enciende.
-/// En macOS y Linux no se puede sin permisos de administrador: la interfaz muestra los pasos.
+/// Windows: descarga la versión **portátil** de Ollama (el zip oficial de sus Releases en GitHub),
+/// la descomprime en la carpeta de TaskAI y la enciende. Sin instalador, sin ventanas y sin arranque
+/// con Windows. En macOS y Linux no se puede sin permisos de administrador: la interfaz muestra los pasos.
 #[tauri::command]
 async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Emitter;
@@ -909,61 +925,44 @@ async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
     let emit = |stage: &str, percent: Option<f64>| {
         let _ = app.emit("ollama-install", InstallProgress { stage: stage.into(), percent });
     };
+    let dest = portable_ollama_dir().ok_or("No encontré la carpeta de datos de Windows (LOCALAPPDATA)")?;
+    let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
+    let url = format!("https://github.com/ollama/ollama/releases/latest/download/ollama-windows-{arch}.zip");
 
-    // 1) Descargar (desde el sitio oficial, por HTTPS)
-    let setup = std::env::temp_dir().join("OllamaSetup.exe");
-    let mut res = reqwest::get("https://ollama.com/download/OllamaSetup.exe")
-        .await
-        .map_err(|e| format!("No pude descargar Ollama: {e}"))?;
-    if !res.status().is_success() {
-        return Err(format!("La descarga de Ollama falló ({})", res.status()));
+    // 1) Descargar el zip (por HTTPS, desde los Releases oficiales de Ollama)
+    let zip_path = std::env::temp_dir().join("taskai-ollama.zip");
+    let downloaded = download_with_progress(&url, &zip_path, |pct| emit("download", pct)).await;
+    if let Err(e) = downloaded {
+        let _ = fs::remove_file(&zip_path);
+        return Err(e);
     }
-    let total = res.content_length().map(|t| t as f64);
-    let mut file = fs::File::create(&setup).map_err(|e| e.to_string())?;
-    let mut done = 0f64;
-    let mut last = -1i64;
-    while let Some(chunk) = res.chunk().await.map_err(|e| e.to_string())? {
-        use std::io::Write;
-        file.write_all(&chunk).map_err(|e| e.to_string())?;
-        done += chunk.len() as f64;
-        let pct = total.map(|t| done / t * 100.0);
-        let whole = pct.map(|p| p as i64).unwrap_or(-1);
-        if whole != last {
-            last = whole;
-            emit("download", pct);
-        }
-    }
-    drop(file);
 
-    // 2) Instalar en silencio (el instalador de Ollama es Inno Setup)
-    emit("install", None);
-    let setup_for_thread = setup.clone();
-    let ok = tauri::async_runtime::spawn_blocking(move || {
-        let mut cmd = std::process::Command::new(setup_for_thread);
-        cmd.args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]);
-        cmd.status().map(|s| s.success())
+    // 2) Descomprimir en una carpeta temporal y luego renombrarla: si algo falla, no queda a medias
+    emit("install", Some(0.0));
+    let part = dest.with_extension("part");
+    let (zip_t, part_t, app_t) = (zip_path.clone(), part.clone(), app.clone());
+    let extracted = tauri::async_runtime::spawn_blocking(move || {
+        extract_zip(&zip_t, &part_t, |pct| {
+            let _ = app_t.emit("ollama-install", InstallProgress { stage: "install".into(), percent: Some(pct) });
+        })
     })
     .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| format!("No pude ejecutar el instalador: {e}"))?;
-    let _ = fs::remove_file(&setup);
-    if !ok {
-        return Err("El instalador de Ollama terminó con error".into());
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    let _ = fs::remove_file(&zip_path);
+    if let Err(e) = extracted {
+        let _ = fs::remove_dir_all(&part);
+        return Err(format!("No pude descomprimir Ollama: {e}"));
     }
+    if !part.join("ollama.exe").exists() {
+        let _ = fs::remove_dir_all(&part);
+        return Err("El zip de Ollama no trae ollama.exe".into());
+    }
+    let _ = fs::remove_dir_all(&dest); // una copia vieja o incompleta
+    fs::rename(&part, &dest).map_err(|e| format!("No pude acomodar Ollama: {e}"))?;
 
-    // 3) El instalador de Ollama abre su app de escritorio al terminar (pide iniciar sesión, ofrece
-    //    una terminal…) y eso confunde. La cerramos y TaskAI enciende solo el servidor, invisible.
+    // 3) Encender (como proceso hijo de TaskAI, invisible)
     emit("start", None);
-    for _ in 0..30 {
-        if ollama_gui_running() {
-            tokio::time::sleep(std::time::Duration::from_millis(800)).await; // que termine de abrir
-            let _ = kill_ollama();
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
-    // Tampoco queremos que esa ventana salga cada vez que se prende la compu: TaskAI enciende la IA al abrirse.
-    remove_ollama_autostart();
     if !ollama_running().await {
         spawn_ollama()?;
     }
@@ -974,40 +973,77 @@ async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
-    Err("Ollama se instaló, pero no respondió. Ábrelo desde el menú Inicio y dale \"Revisar\".".into())
+    Err("Ollama quedó listo, pero no respondió. Dale \"Revisar\" en un momento.".into())
 }
 
-/// ¿Está abierta la app de escritorio de Ollama ("ollama app.exe")? Solo aplica a Windows.
-fn ollama_gui_running() -> bool {
-    if !cfg!(windows) {
-        return false;
+/// Descarga `url` a `dest` avisando el porcentaje (solo cuando cambia el número entero).
+async fn download_with_progress(url: &str, dest: &PathBuf, progress: impl Fn(Option<f64>)) -> Result<(), String> {
+    use std::io::Write;
+    let mut res = reqwest::get(url).await.map_err(|e| format!("No pude descargar Ollama: {e}"))?;
+    if !res.status().is_success() {
+        return Err(format!("La descarga de Ollama falló ({})", res.status()));
     }
-    let mut c = std::process::Command::new("tasklist");
-    c.args(["/FI", "IMAGENAME eq ollama app.exe", "/NH"]);
-    hide_window(&mut c);
-    c.output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase().contains("ollama app.exe"))
-        .unwrap_or(false)
+    let total = res.content_length().map(|t| t as f64);
+    let mut file = std::io::BufWriter::new(fs::File::create(dest).map_err(|e| e.to_string())?);
+    let (mut done, mut last) = (0f64, -1i64);
+    while let Some(chunk) = res.chunk().await.map_err(|e| format!("Se cortó la descarga: {e}"))? {
+        file.write_all(&chunk).map_err(|e| e.to_string())?;
+        done += chunk.len() as f64;
+        let pct = total.map(|t| done / t * 100.0);
+        let whole = pct.map(|p| p as i64).unwrap_or(-1);
+        if whole != last {
+            last = whole;
+            progress(pct);
+        }
+    }
+    file.flush().map_err(|e| e.to_string())
 }
 
-/// Quita el acceso directo que el instalador de Ollama pone en "Inicio" de Windows
-/// (si no, su ventana se abre sola cada vez que se prende la compu).
-fn remove_ollama_autostart() {
-    if let Some(dir) = dirs::config_dir() {
-        let link = dir.join("Microsoft").join("Windows").join("Start Menu").join("Programs").join("Startup").join("Ollama.lnk");
-        let _ = fs::remove_file(link);
+/// Descomprime `zip` en `dest`. `enclosed_name` descarta rutas que intenten salirse de la carpeta (`../`).
+fn extract_zip(zip: &PathBuf, dest: &PathBuf, progress: impl Fn(f64)) -> Result<(), String> {
+    let mut archive = zip::ZipArchive::new(fs::File::open(zip).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    let _ = fs::remove_dir_all(dest);
+    let total: u64 = (0..archive.len())
+        .filter_map(|i| archive.by_index_raw(i).ok().map(|f| f.size()))
+        .sum::<u64>()
+        .max(1);
+    let (mut done, mut last) = (0u64, -1i64);
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let Some(rel) = entry.enclosed_name() else { continue };
+        let out = dest.join(rel);
+        if entry.is_dir() {
+            fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+            continue;
+        }
+        if let Some(parent) = out.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let mut file = std::io::BufWriter::new(fs::File::create(&out).map_err(|e| e.to_string())?);
+        std::io::copy(&mut entry, &mut file).map_err(|e| e.to_string())?;
+        done += entry.size();
+        let whole = (done * 100 / total) as i64;
+        if whole != last {
+            last = whole;
+            progress(whole as f64);
+        }
     }
+    Ok(())
 }
 
 // ----- Encender y apagar la IA desde TaskAI -----
+
+/// El `ollama serve` que encendió TaskAI. Solo apagamos este: nunca cerramos un Ollama ajeno
+/// (el usuario puede usarlo con otros programas).
+static OLLAMA_CHILD: Mutex<Option<std::process::Child>> = Mutex::new(None);
 
 /// Arranca Ollama sin ventanas de consola (no espera a que responda).
 fn spawn_ollama() -> Result<(), String> {
     use std::process::{Command, Stdio};
     let mut cmd = if cfg!(windows) {
         // Solo el servidor, invisible. (La "ollama app.exe" de la bandeja abre su propia ventana.)
-        let dir = windows_ollama_dir().ok_or("No encontré dónde está instalado Ollama")?;
-        let mut c = Command::new(dir.join("ollama.exe"));
+        let exe = windows_ollama_exe().ok_or("NOT_INSTALLED")?;
+        let mut c = Command::new(exe);
         c.arg("serve");
         c
     } else if cfg!(target_os = "macos") {
@@ -1021,7 +1057,25 @@ fn spawn_ollama() -> Result<(), String> {
     };
     cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     hide_window(&mut cmd);
-    cmd.spawn().map(|_| ()).map_err(|e| format!("No pude encender Ollama: {e}"))
+    let child = cmd.spawn().map_err(|e| format!("No pude encender Ollama: {e}"))?;
+    if !cfg!(target_os = "macos") {
+        // (En macOS `open` termina enseguida: el hijo no es Ollama)
+        *OLLAMA_CHILD.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
+    }
+    Ok(())
+}
+
+/// Apaga el Ollama que encendió TaskAI. Devuelve `false` si no había uno nuestro.
+fn stop_own_ollama() -> bool {
+    let Some(mut child) = OLLAMA_CHILD.lock().unwrap_or_else(|e| e.into_inner()).take() else {
+        return false;
+    };
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        return false; // ya se había cerrado solo
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    true
 }
 
 /// Descarga de la memoria (VRAM/RAM) los modelos que tenga cargados Ollama.
@@ -1046,8 +1100,10 @@ async fn unload_models() {
     }
 }
 
-/// Cierra los procesos de Ollama. En Linux, si corre como servicio de systemd, no se puede sin sudo.
-fn kill_ollama() -> Result<(), String> {
+/// macOS y Linux: cierra Ollama aunque no lo haya encendido TaskAI (como antes).
+/// En Linux, si corre como servicio de systemd, no se puede sin sudo.
+/// En Windows NO se usa: ahí solo apagamos nuestro proceso hijo (ver `stop_own_ollama`).
+fn kill_other_ollama() -> Result<(), String> {
     use std::process::{Command, Stdio};
     let run = |prog: &str, args: &[&str]| {
         let mut c = Command::new(prog);
@@ -1056,8 +1112,7 @@ fn kill_ollama() -> Result<(), String> {
         c.status().map(|s| s.success()).unwrap_or(false)
     };
     if cfg!(windows) {
-        run("taskkill", &["/F", "/IM", "ollama app.exe"]);
-        run("taskkill", &["/F", "/IM", "ollama.exe"]);
+        return Ok(());
     } else if cfg!(target_os = "macos") {
         run("osascript", &["-e", "quit app \"Ollama\""]);
         run("pkill", &["-x", "ollama"]);
@@ -1126,17 +1181,24 @@ async fn ollama_start() -> Result<(), String> {
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
-    Err("Ollama no respondió. Ábrelo desde el menú Inicio.".into())
+    Err("Ollama no respondió. Intenta encenderlo otra vez en un momento.".into())
 }
 
-/// Apaga Ollama: primero libera la memoria del modelo y luego cierra sus procesos.
+/// Apaga la IA: primero libera la memoria del modelo y luego cierra el Ollama que encendió TaskAI.
+/// Devuelve "OFF" si se apagó, o "FREED" si Ollama lo abrió otro programa (Windows): se liberó
+/// la memoria de la tarjeta de video, pero no lo cerramos.
 #[tauri::command]
-async fn ollama_stop() -> Result<(), String> {
+async fn ollama_stop() -> Result<String, String> {
     unload_models().await;
-    kill_ollama()?;
+    if !stop_own_ollama() {
+        if cfg!(windows) {
+            return Ok("FREED".into());
+        }
+        kill_other_ollama()?;
+    }
     for _ in 0..20 {
         if !ollama_running().await {
-            return Ok(());
+            return Ok("OFF".into());
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
@@ -1582,7 +1644,9 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 if load_config().stop_ai_on_exit {
                     tauri::async_runtime::block_on(unload_models());
-                    let _ = kill_ollama();
+                    if !stop_own_ollama() {
+                        let _ = kill_other_ollama(); // en Windows no hace nada: no cerramos Ollamas ajenos
+                    }
                 }
             }
         });
