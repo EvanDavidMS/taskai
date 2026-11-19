@@ -12,6 +12,8 @@ import { type Task, groupOf, parseTasks, parseWhen, whenLabel } from "./tasks";
 import { checkReminders } from "./reminders";
 import TasksView from "./TasksView";
 import TrashView from "./TrashView";
+import type { Update } from "@tauri-apps/plugin-updater";
+import { UpdateBanner, findUpdate } from "./Updater";
 import "./App.css";
 
 type NoteMeta = {
@@ -93,6 +95,7 @@ type Toast = { text: string; undo?: () => void };
 type ThemePref = "system" | "light" | "dark";
 
 type Section = "notes" | "tasks" | "trash" | "settings";
+type SearchHit = { id: string; before: string; hit: string; after: string };
 const SECTION_TITLE: Partial<Record<Section, string>> = {
   tasks: "Pendientes",
   trash: "Papelera",
@@ -302,6 +305,8 @@ export default function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [accent, setAccent] = useState(savedAccent); // color principal (Configuración → Apariencia)
   const [sortBy, setSortBy] = useState<"recent" | "az">("recent"); // orden de las tarjetas del tablero
+  // Búsqueda en todo el texto (la hace el backend); null = sin búsqueda o esperando respuesta
+  const [hits, setHits] = useState<Map<string, SearchHit> | null>(null);
   const [section, setSection] = useState<Section>("notes"); // qué muestra el área principal sin nota abierta
   const [structMap, setStructMap] = useState<Record<string, string>>({}); // versiones ordenadas (para Pendientes)
   const [streamText, setStreamText] = useState(""); // lo que la IA va escribiendo en vivo
@@ -392,6 +397,25 @@ export default function App() {
   );
   const tasksRef = useRef<Task[]>([]);
   tasksRef.current = tasks;
+
+  // Buscar en todo el texto (título, apuntes y versión ordenada), un instante después de teclear
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) {
+      setHits(null);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(() => {
+      invoke<SearchHit[]>("search_notes", { query: q })
+        .then((r) => alive && setHits(new Map(r.map((h) => [h.id, h]))))
+        .catch(() => {});
+    }, 150);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [search, notes]);
 
   // Recordatorios: revisa cada 30 s si toca avisar de algo (mientras la app esté abierta)
   useEffect(() => {
@@ -487,6 +511,20 @@ export default function App() {
     },
     [checkAi],
   );
+
+  // Actualizaciones: revisa en GitHub unos segundos después de abrir (sin estorbar el arranque)
+  const [update, setUpdate] = useState<Update | null>(null);
+  useEffect(() => {
+    if (!onboarded) return;
+    const t = setTimeout(() => findUpdate().then(setUpdate), 6000);
+    return () => clearTimeout(t);
+  }, [onboarded]);
+  /** Para el botón de Configuración: "found" muestra el aviso. */
+  async function checkUpdatesNow(): Promise<"found" | "none"> {
+    const u = await findUpdate();
+    setUpdate(u);
+    return u ? "found" : "none";
+  }
 
   const loadAll = useCallback(async () => {
     const cfg = await invoke<{ name: string; onboarded: boolean; start_ai_on_open: boolean }>("get_config");
@@ -790,8 +828,10 @@ export default function App() {
   const allTags = useMemo(() => [...new Set(notes.flatMap((n) => n.tags))].sort(), [notes]);
 
   const visible = notes.filter((n) => {
-    const q = search.toLowerCase();
-    const okSearch = !q || n.title.toLowerCase().includes(q) || n.preview.toLowerCase().includes(q);
+    const q = search.trim().toLowerCase();
+    // Con resultados del backend se busca en todo el texto; mientras llegan, en título y vista previa
+    const okSearch =
+      !q || (hits ? hits.has(n.id) : n.title.toLowerCase().includes(q) || n.preview.toLowerCase().includes(q));
     const okTag = !tagFilter || n.tags.includes(tagFilter);
     const okFolder = !folderFilter || n.folder === folderFilter;
     return okSearch && okTag && okFolder;
@@ -1108,6 +1148,7 @@ export default function App() {
                 power={power}
                 onPower={setAiPower}
                 ask={setAsk}
+                onCheckUpdates={checkUpdatesNow}
               />
             ) : section === "trash" ? (
               <TrashView
@@ -1206,7 +1247,15 @@ export default function App() {
                       </button>
                     </div>
                     <h3 className="card-title">{n.title}</h3>
-                    <p className="card-preview">{n.preview || "Sin contenido"}</p>
+                    {hits?.get(n.id)?.hit ? (
+                      <p className="card-preview">
+                        {hits.get(n.id)!.before}
+                        <mark>{hits.get(n.id)!.hit}</mark>
+                        {hits.get(n.id)!.after}
+                      </p>
+                    ) : (
+                      <p className="card-preview">{n.preview || "Sin contenido"}</p>
+                    )}
                     <div className="card-foot">
                       {n.tags.slice(0, 3).map((t) => (
                         <span key={t} className="card-tag">
@@ -1457,6 +1506,8 @@ export default function App() {
           </>
         )}
       </main>
+
+      {update && <UpdateBanner update={update} onClose={() => setUpdate(null)} beforeInstall={flushNote} />}
 
       {toast && (
         <div className="toast" role="status">

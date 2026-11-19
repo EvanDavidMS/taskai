@@ -53,20 +53,21 @@ pnpm tauri dev      # modo desarrollo (Vite recarga solo; si cambias Rust, recom
 
 Ojo: en esta compu la **app de bandeja de Ollama arranca con Windows** (`Startup\Ollama.lnk`, la puso su instalador antes de TaskAI). Evan puede quitarla desde Administrador de tareas → Aplicaciones de arranque.
 
-### Publicar una versión nueva
+### Publicar una versión nueva (con actualización automática)
 
-1. Subir la versión en **tres** archivos: `src-tauri/tauri.conf.json`, `package.json`, `src-tauri/Cargo.toml`.
-2. Compilar (≈5 min):
-   ```powershell
-   pnpm tauri build
-   # src-tauri\target\release\bundle\nsis\TaskAI_<versión>_x64-setup.exe   ← el que se publica
-   # src-tauri\target\release\bundle\msi\TaskAI_<versión>_x64_es-ES.msi
-   ```
-3. Commit + push, y luego:
-   ```powershell
-   gh release create v<versión> "src-tauri\target\release\bundle\nsis\TaskAI_<versión>_x64-setup.exe" --title "TaskAI <versión>" --notes-file notas.md --latest
-   ```
-   Las notas del Release van en español: cómo instalar (aviso de SmartScreen) + novedades.
+Desde la v1.3.0 las apps instaladas se actualizan solas: al abrir, consultan
+`https://github.com/EvanDavidMS/taskai/releases/latest/download/latest.json` y solo aceptan instaladores **firmados**.
+
+```powershell
+# 1) Escribir las notas en español: "## ⬇ Cómo instalar" + "## ✨ Novedades de la X" (el aviso de la app muestra los puntos de Novedades)
+# 2) Publicar (sube la versión en los 3 archivos, compila firmado, crea latest.json, commit, push y Release):
+.\scripts\publicar.ps1 -Version 1.4.0 -Notas scripts\notas-1.4.0.md
+#    -SinPublicar → solo compila y genera latest.json
+```
+
+- **Llave privada:** `C:\Users\PC\.tauri\taskai.key` (sin contraseña). **Nunca** va al repo. Si se pierde, las apps instaladas ya no aceptan actualizaciones → Evan debe respaldarla. La pública está en `tauri.conf.json` → `plugins.updater.pubkey`.
+- **Probado de punta a punta (19 nov):** una 1.2.9 de prueba (con `--config` apuntando a un `latest.json` servido en `http://127.0.0.1:8765` y `dangerousInsecureTransportProtocol`) detectó la 1.3.0, la descargó, se instaló sola (modo pasivo, sin las preguntas del desinstalador) y se reabrió.
+- Quien tenga ≤ 1.2.2 tiene que instalar la 1.3.0 a mano una vez.
 
 **Para ver el asistente de bienvenida otra vez:** borrar `%APPDATA%\TaskAI\config.json` (las notas no se tocan).
 
@@ -154,12 +155,12 @@ Viven en `Documentos\TaskAI` (o la carpeta elegida). Para llevarlas a otra compu
 Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
 
 **Ahora que hay gente usándolo**
-1. **Actualizaciones automáticas** (`tauri-plugin-updater` + GitHub Releases, firma gratis con clave propia): sin esto, quien lo instaló se queda para siempre en su versión.
-2. **Minimizar a la bandeja** al cerrar la ventana (opcional) + **iniciar con Windows**: así los recordatorios llegan aunque no tengas la ventana abierta. La IA se apagaría solo al "Salir" de verdad.
-3. **Actions automático al publicar**: en repos públicos los minutos de Actions son gratis; que al crear un tag `v*` compile y suba el instalador al Release solo.
+1. ~~Actualizaciones automáticas~~ ✅ v1.3.0
+2. Minimizar a la bandeja + iniciar con Windows → **Evan no lo quiere**.
+3. Actions automático al publicar → **Evan no lo quiere** (se publica con `scripts\publicar.ps1`).
 
 **Para el día a día**
-4. **Buscar en todo el texto** de las notas (hoy solo título y vista previa).
+4. ~~Buscar en todo el texto~~ ✅ v1.3.0 (`search_notes` en Rust, sin acentos, con fragmento resaltado).
 5. **Exportar una nota**: PDF, copiar como texto o como Markdown.
 6. **Pendientes**: agregar uno a mano desde la vista Pendientes, cambiarle la fecha, y una vista de semana/calendario.
 7. **Notas favoritas** fijadas arriba del tablero y arrastrar tarjetas a una carpeta.
@@ -172,7 +173,6 @@ Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
 ## 9. Límites conocidos
 
 - El 7B a veces malinterpreta palabras muy mal escritas (leyó "covivi" como "comí").
-- La búsqueda del tablero solo mira **título y vista previa** (no todo el texto de la nota).
 - Los recordatorios solo funcionan con TaskAI abierto.
 - El instalador no tiene firma digital → Windows muestra "Windows protegió su PC" (es de paga).
 - El workflow de Actions (`instalador-windows.yml`) sigue siendo manual y solo Windows.

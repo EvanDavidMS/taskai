@@ -296,6 +296,7 @@ input, textarea, select { font: inherit; color: inherit; }
   margin: 0; flex: 1; color: var(--muted); font-size: 13.5px; line-height: 1.55;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
+.card-preview mark { background: var(--accent-soft); color: var(--accent); font-weight: 600; border-radius: 4px; padding: 0 2px; }
 .card-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 4px; }
 .card-tag { font-size: 12px; color: var(--accent); font-weight: 500; }
 .card-time { margin-left: auto; font-size: 12px; color: var(--faint); white-space: nowrap; }
@@ -766,7 +767,25 @@ kbd {
 .size { font-size: 12px; color: var(--faint); }
 .in-use { color: var(--ok); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
 .progress { position: relative; margin-top: 8px; height: 20px; border-radius: 6px; background: var(--code-bg); overflow: hidden; }
-.progress div { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #ff8a4c, #ff4d6d); transition: width 0.3s; }
+.progress div { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: 0.85; transition: width 0.3s; }
+.progress span { color: var(--heading); }
+
+/* Aviso de versión nueva */
+.update-card {
+  position: fixed; right: 20px; bottom: 20px; z-index: 55; width: min(360px, calc(100vw - 40px));
+  padding: 16px; border-radius: 18px; background: var(--card); border: 1px solid var(--card-line);
+  box-shadow: var(--shadow); animation: pop 0.2s ease;
+}
+.update-head { display: flex; align-items: flex-start; gap: 12px; }
+.update-head > div { flex: 1; min-width: 0; }
+.update-head b { color: var(--heading); }
+.update-head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.update-head .icon-btn { width: 28px; height: 28px; margin: -4px -4px 0 0; }
+.update-ico { display: grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0; border-radius: 10px; color: var(--accent); background: var(--accent-soft); }
+.update-notes { margin: 12px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.update-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.update-card .progress { margin-top: 14px; }
+.version-pill { padding: 6px 12px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); font-weight: 600; color: var(--heading); font-variant-numeric: tabular-nums; }
 .progress span { position: relative; padding-left: 8px; font-size: 11.5px; line-height: 20px; color: var(--text); }
 .err-text { color: var(--err) !important; }
 .hint-box { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; background: rgba(251, 191, 36, 0.1); color: var(--warn); font-size: 12.5px; }

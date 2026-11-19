@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { ACCENTS } from "./accents";
 import { type RemindPrefs, loadRemind, notify, saveRemind } from "./reminders";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -162,7 +163,9 @@ export default function Settings({
   power,
   onPower,
   ask,
+  onCheckUpdates,
 }: {
+  onCheckUpdates: () => Promise<"found" | "none">;
   power: "idle" | "starting" | "stopping";
   onPower: (on: boolean) => void;
   ask: AskFn;
@@ -204,7 +207,7 @@ export default function Settings({
         ))}
       </nav>
       <div className="set-body">
-        {tab === "general" && <GeneralTab onProfileChanged={onProfileChanged} />}
+        {tab === "general" && <GeneralTab onProfileChanged={onProfileChanged} onCheckUpdates={onCheckUpdates} />}
         {tab === "look" && <LookTab theme={theme} setTheme={setTheme} accent={accent} setAccent={setAccent} />}
         {tab === "ai" && (
           <AiTab
@@ -238,7 +241,18 @@ function Card({ title, desc, children }: { title: string; desc?: string; childre
 type ConfigView = { name: string; notes_dir: string; default_dir: string };
 
 // ---------- General: tu nombre y la carpeta de notas ----------
-function GeneralTab({ onProfileChanged }: { onProfileChanged: () => Promise<void> }) {
+function GeneralTab({
+  onProfileChanged,
+  onCheckUpdates,
+}: {
+  onProfileChanged: () => Promise<void>;
+  onCheckUpdates: () => Promise<"found" | "none">;
+}) {
+  const [version, setVersion] = useState("");
+  const [upd, setUpd] = useState<"" | "checking" | "none" | "found">("");
+  useEffect(() => {
+    getVersion().then(setVersion);
+  }, []);
   const [cfg, setCfg] = useState<ConfigView | null>(null);
   const [name, setName] = useState("");
   const [msg, setMsg] = useState("");
@@ -317,6 +331,24 @@ function GeneralTab({ onProfileChanged }: { onProfileChanged: () => Promise<void
           llevártelas, copia la carpeta completa (incluida la oculta <code>.taskai</code>).
         </p>
         {err && <p className="err-text">{err}</p>}
+      </Card>
+
+      <Card title="Versión" desc="TaskAI revisa solo si hay versión nueva cada vez que lo abres.">
+        <div className="set-inline">
+          <span className="version-pill">TaskAI {version}</span>
+          <button
+            className="btn"
+            disabled={upd === "checking"}
+            onClick={async () => {
+              setUpd("checking");
+              setUpd(await onCheckUpdates());
+            }}
+          >
+            <Icon name="restore" size={14} /> {upd === "checking" ? "Buscando…" : "Buscar actualizaciones"}
+          </button>
+          {upd === "none" && <span className="set-ok">✓ Tienes la versión más reciente</span>}
+          {upd === "found" && <span className="set-ok">¡Hay una versión nueva! Mira el aviso abajo a la derecha.</span>}
+        </div>
       </Card>
     </>
   );

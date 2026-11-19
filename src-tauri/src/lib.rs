@@ -1274,6 +1274,78 @@ async fn ai_structure(
     Ok(out.trim_matches('`').trim().to_string())
 }
 
+/// Minúsculas y sin acentos, letra por letra (así "telefono" encuentra "Teléfono").
+/// Conserva una letra por cada letra original, para poder recortar el texto original en la misma posición.
+fn fold_char(c: char) -> char {
+    match c {
+        'á' | 'à' | 'ä' | 'â' | 'Á' | 'À' | 'Ä' | 'Â' => 'a',
+        'é' | 'è' | 'ë' | 'ê' | 'É' | 'È' | 'Ë' | 'Ê' => 'e',
+        'í' | 'ì' | 'ï' | 'î' | 'Í' | 'Ì' | 'Ï' | 'Î' => 'i',
+        'ó' | 'ò' | 'ö' | 'ô' | 'Ó' | 'Ò' | 'Ö' | 'Ô' => 'o',
+        'ú' | 'ù' | 'ü' | 'û' | 'Ú' | 'Ù' | 'Ü' | 'Û' => 'u',
+        'ñ' | 'Ñ' => 'n',
+        _ => c.to_lowercase().next().unwrap_or(c),
+    }
+}
+
+#[derive(Serialize)]
+struct SearchHit {
+    id: String,
+    /// Pedacito del texto alrededor de lo encontrado (vacío si solo coincidió el título)
+    before: String,
+    hit: String,
+    after: String,
+}
+
+/// Busca en todo: título, texto completo y versión ordenada. Sin importar mayúsculas ni acentos.
+#[tauri::command]
+fn search_notes(query: String) -> Result<Vec<SearchHit>, String> {
+    let q: Vec<char> = query.trim().chars().map(fold_char).collect();
+    if q.is_empty() {
+        return Ok(vec![]);
+    }
+    let dir = notes_dir()?;
+    let meta = load_meta();
+    let find = |text: &str| -> Option<SearchHit> {
+        let chars: Vec<char> = text.chars().map(|c| if c == '\n' { ' ' } else { c }).collect();
+        let folded: Vec<char> = chars.iter().map(|&c| fold_char(c)).collect();
+        let pos = folded.windows(q.len()).position(|w| w == q.as_slice())?;
+        let start = pos.saturating_sub(40);
+        let end = (pos + q.len() + 70).min(chars.len());
+        let s = |a: usize, b: usize| chars[a..b].iter().collect::<String>();
+        Some(SearchHit {
+            id: String::new(),
+            before: format!("{}{}", if start > 0 { "…" } else { "" }, s(start, pos).trim_start()),
+            hit: s(pos, pos + q.len()),
+            after: format!("{}{}", s(pos + q.len(), end).trim_end(), if end < chars.len() { "…" } else { "" }),
+        })
+    };
+    let mut hits = Vec::new();
+    for folder in folder_names()? {
+        let Ok(entries) = fs::read_dir(dir.join(&folder)) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let id = path.file_stem().unwrap().to_string_lossy().to_string();
+            let raw = fs::read_to_string(&path).unwrap_or_default();
+            // Sin las referencias a imágenes, que no son texto
+            let raw: String = raw.lines().filter(|l| !is_image_line(l)).collect::<Vec<_>>().join("\n");
+            let ordered = structured_path(&id).ok().and_then(|p| fs::read_to_string(p).ok()).unwrap_or_default();
+            let title = display_title(&id, &raw, &meta);
+            let found = find(&raw)
+                .or_else(|| find(&ordered.replace(['#', '*', '>'], "")))
+                .or_else(|| find(&title).map(|_| SearchHit { id: String::new(), before: String::new(), hit: String::new(), after: String::new() }));
+            if let Some(mut h) = found {
+                h.id = id;
+                hits.push(h);
+            }
+        }
+    }
+    Ok(hits)
+}
+
 /// Las versiones ordenadas de todas las notas (para juntar los pendientes en una sola vista).
 #[tauri::command]
 fn all_structured() -> Result<HashMap<String, String>, String> {
@@ -1378,12 +1450,16 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // Actualizaciones: revisa latest.json del último Release de GitHub (firmado con la llave de Evan)
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             list_notes,
             read_note,
             save_note,
             save_structured,
             all_structured,
+            search_notes,
             create_note,
             delete_note,
             list_trash,
