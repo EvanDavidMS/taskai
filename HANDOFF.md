@@ -2,7 +2,7 @@
 
 > Para la próxima sesión de Claude Code: lee esto completo y luego [`CLAUDE.md`](CLAUDE.md).
 > Última actualización: **19 de noviembre de 2026**, desde la PC de escritorio de Evan (**Windows 11, RTX 3060 12 GB, 16 GB RAM**).
-> Versión publicada: **v1.4.1** (primera compilada en GitHub Actions) (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
+> Versión publicada: **v1.4.2** (compilada en GitHub Actions) (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
 
 ## 1. Dónde vamos
 
@@ -175,6 +175,7 @@ Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
 - 19 nov: Defender detectó `taskai.exe` 1.3.0 y 1.4.0 como **`Trojan:Win32/Bearfoos.A!ml`** (heurística de machine learning) y lo eliminó (exe, accesos directos y registro). Las notas no se tocan.
 - Evan debe: permitirlo en Historial de protección y **reportar falso positivo** en <https://www.microsoft.com/en-us/wdsi/filesubmission> (como "Software developer"; subir el `taskai.exe` suelto, que es lo que Defender detecta, no el setup).
 - ✅ **Reporte 1 enviado (19 nov 2026, 13:29):** `taskai.exe` 1.4.0, Submission ID `4e25c3ca-13c9-4caf-937e-d938c4609256`, firmas 1.463.374.0, estado *Pending*. La respuesta llega al correo de Evan. **Al publicar la 1.4.1, mandar otro reporte con su `taskai.exe` nuevo.**
+- **v1.4.2 publicada (19 nov):** arregla que los menús de la barra (Exportar, cambiar carpeta) quedaban debajo del panel de la nota. Causa: animaciones con fill `both` dejan al elemento en su propia capa (stacking context). Regla: en `App.css` usar siempre `backwards`; `.toolbar` lleva `z-index: 5`. El `taskai.exe` de la 1.4.2 queda en `src-tauri/target/release/bundle/actions/`.
 - **v1.4.1 publicada (19 nov, 14:13)** desde Actions (sin firma de Windows todavía; `.sig` de actualizaciones OK, `latest.json` apunta a 1.4.1). El `taskai.exe` para el reporte 2 a Microsoft queda en `src-tauri/target/release/bundle/actions/taskai.exe` (también en el artefacto `TaskAI-windows` del run). Aviso de Actions: Node 20 obsoleto en `actions/checkout@v4`, `setup-node@v4`, `upload-artifact@v4`, `pnpm/action-setup@v4` → subirlas de versión en algún momento (no falla todavía).
 - En código, quitar lo que parece malware: borrar `Startup\Ollama.lnk` (`remove_ollama_autostart`), `taskkill /F` y `tasklist`, y la instalación silenciosa de Ollama.
 - **Plan acordado con Evan:** en vez del instalador de Ollama, usar su **versión portátil** (`ollama-windows-amd64.zip` de los Releases de Ollama; confirmar que existe y su tamaño). TaskAI la descarga a su propia carpeta (p. ej. `%LOCALAPPDATA%\TaskAI\ollama`) y corre `ollama serve` como **proceso hijo** (guardar el `Child` y apagarlo con `child.kill()`, sin `taskkill` a procesos ajenos). Así no hay ventana de Ollama que confunda, ni arranque con Windows, ni instalador silencioso; desinstalar = borrar esa carpeta + `~\.ollama`. Si el usuario ya tiene Ollama instalado, usar el suyo y no tocarlo.
