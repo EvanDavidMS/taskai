@@ -2,7 +2,7 @@
 
 > Para la próxima sesión de Claude Code: lee esto completo y luego [`CLAUDE.md`](CLAUDE.md).
 > Última actualización: **19 de noviembre de 2026**, desde la PC de escritorio de Evan (**Windows 11, RTX 3060 12 GB, 16 GB RAM**).
-> Versión publicada: **v1.2.2** · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
+> Versión publicada: **v1.4.0** (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
 
 ## 1. Dónde vamos
 
@@ -159,16 +159,18 @@ Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
 2. Minimizar a la bandeja + iniciar con Windows → **Evan no lo quiere**.
 3. Actions automático al publicar → **Evan no lo quiere** (se publica con `scripts\publicar.ps1`).
 
-**Para el día a día**
-4. ~~Buscar en todo el texto~~ ✅ v1.3.0 (`search_notes` en Rust, sin acentos, con fragmento resaltado).
-5. **Exportar una nota**: PDF, copiar como texto o como Markdown.
-6. **Pendientes**: agregar uno a mano desde la vista Pendientes, cambiarle la fecha, y una vista de semana/calendario.
-7. **Notas favoritas** fijadas arriba del tablero y arrastrar tarjetas a una carpeta.
+**Hecho en v1.4.0 (19 nov)**
+4. ~~Buscar en todo el texto~~ ✅ (`search_notes` en Rust, sin acentos, fragmento resaltado).
+5. ~~Exportar~~ ✅ PDF (`window.print` + `@media print`, `@page { margin: 0 }` para que no salgan fecha/título/localhost del navegador; margen interno con `box-decoration-break: clone`), `.md` (`export_file` + diálogo guardar), copiar texto/Markdown (`src/exporter.ts`).
+6. ~~Pendientes~~ ✅ agregar a mano (`add_task` → nota fijada "Pendientes sueltos"), cambiar/quitar fecha desde la pastilla (fija la nota), vista **Semana** (7 / 4 / 1 columnas según ancho).
+7. ~~Favoritas y arrastrar~~ ✅ `favorite` en meta.json + `set_favorite`; arrastrar tarjeta a carpeta del menú (`dragDropEnabled: false` en tauri.conf, si no, el webview bloquea el drag HTML5). **Falta que Evan pruebe el arrastre en la app real.**
+8. ~~Capturas y GIF~~ ✅ `docs/capturas/` (notas de ejemplo de "Ana", nunca las de Evan). Se generaron con `__preview` + Edge headless (`--force-device-scale-factor=1.5`) y el GIF con ffmpeg (concat + palettegen).
 
-**Pulido / más adelante**
-8. **Capturas y un GIF en el README** (claro y oscuro).
-9. Instaladores de **Linux** (`.deb`/AppImage) y **macOS** en Actions.
+**Pendiente (siguiente sesión)**
+9. Instaladores de **Linux** (`.deb`/AppImage, compilar en la laptop EndeavourOS) y **macOS** (solo en una Mac o con Actions; Evan no quiere Actions → preguntarle).
 10. Plantilla propia para **Diario** (ej. "Cómo me sentí", "Lo mejor del día").
+11. **Microanimaciones suaves** en toda la interfaz (transiciones al abrir nota, palomear, cambiar de sección, tarjetas).
+12. **Sonidos**: Evan ya tiene los archivos de audio, solo hay que meterlos (p. ej. al palomear un pendiente, al terminar de ordenar, recordatorio). Pedirle los archivos y dónde los quiere; agregar opción para silenciarlos en Configuración.
 
 ## 9. Límites conocidos
 
