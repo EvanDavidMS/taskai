@@ -26,7 +26,12 @@ App de escritorio de apuntes: el usuario escribe rápido y desordenado a la izqu
 | `src-tauri/src/lib.rs` | Todo el backend: notas y carpetas en disco, metadatos, Ollama (ordenar, clasificar, descargar modelos), detección de SO |
 | `src/App.tsx` | Interfaz principal + lógica de IA del lado del cliente (fechas, horas, palomitas) |
 | `src/Onboarding.tsx` | Asistente de bienvenida (primera vez): nombre, tema, carpeta, instalar Ollama, elegir modelo |
-| `src/Settings.tsx` | Panel ⚙: instalar Ollama según el SO detectado, elegir o descargar modelo, tema |
+| `src/Settings.tsx` | Página de Configuración (General, Apariencia, IA, Recordatorios, Atajos) |
+| `src/tasks.ts` · `src/TasksView.tsx` | Vista Pendientes: lee las palomitas `- [ ] texto — **fecha, hora**` de todas las notas |
+| `src/reminders.ts` | Avisos del sistema (plugin notification) para pendientes con hora + resumen diario |
+| `src/TrashView.tsx` | Papelera (restaurar / borrar para siempre) |
+| `src/icons.tsx` | Íconos de línea, logo (SVG) y color/ícono de cada carpeta |
+| `src/accents.ts` | Colores principales elegibles |
 | `src/App.css` | Estilos. **Todos los colores son tokens** en `:root` (oscuro) y `:root[data-theme="light"]` (claro) |
 | `src/main.tsx` | Aplica el tema antes del primer pintado (evita el destello) |
 
@@ -39,6 +44,7 @@ Documentos/TaskAI/            (dirs::document_dir: ~/Documentos en Linux españo
 └── .taskai/
     ├── nota-<ms>.md          ← versión ordenada por la IA (con palomitas [x])
     ├── img/<ms>.png          ← imágenes pegadas con Ctrl + V (en el texto: `![imagen](img/<ms>.png)`)
+    ├── papelera/             ← notas borradas (30 días): <id>.md, <id>.ordenada.md e indice.json
     └── meta.json             ← { id: { locked, pinned, title } }
 ```
 
@@ -48,6 +54,7 @@ Documentos/TaskAI/            (dirs::document_dir: ~/Documentos en Linux españo
 - `locked`: el usuario movió la nota a mano → la IA ya no la cambia de carpeta.
 - `pinned`: versión ordenada fijada → la IA ya no la reescribe sola (solo con "Revisar").
 - Las notas sueltas en la raíz se migran solas a "Notas rápidas" al iniciar.
+- Borrar manda a la papelera (`delete_note`); las notas **vacías** (sin texto ni título) se descartan solas al salir de ellas y al abrir la app.
 
 ## Cómo funciona la IA (importante: los modelos de 7B son malos con cuentas)
 

@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ClipboardEvent as ReactClipboardEvent } from "react";
+import type { ClipboardEvent as ReactClipboardEvent, CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import Settings from "./Settings";
 import Onboarding from "./Onboarding";
 import { applyAccent, savedAccent } from "./accents";
+import { FolderTag, Icon, Logo, folderLook } from "./icons";
+import { listen } from "@tauri-apps/api/event";
+import { type Task, groupOf, parseTasks, parseWhen, whenLabel } from "./tasks";
+import { checkReminders } from "./reminders";
+import TasksView from "./TasksView";
+import TrashView from "./TrashView";
 import "./App.css";
 
 type NoteMeta = {
@@ -86,14 +92,12 @@ type FolderInfo = { name: string; count: number; builtin: boolean };
 type Toast = { text: string; undo?: () => void };
 type ThemePref = "system" | "light" | "dark";
 
-const FOLDER_ICON: Record<string, string> = {
-  "Notas rápidas": "⚡",
-  Diario: "📓",
-  Escuela: "🎓",
-  Trabajo: "💼",
-  Hobbys: "🎨",
+type Section = "notes" | "tasks" | "trash" | "settings";
+const SECTION_TITLE: Partial<Record<Section, string>> = {
+  tasks: "Pendientes",
+  trash: "Papelera",
+  settings: "Configuración",
 };
-const icon = (f: string) => FOLDER_ICON[f] ?? "📁";
 type AiState = "idle" | "waiting" | "working" | "done" | "error" | "off";
 
 const AI_DELAY_MS = 3000; // la IA ordena cuando dejas de escribir 3 s
@@ -213,6 +217,24 @@ function carryChecks(oldMd: string, newMd: string) {
   return newMd.replace(TASK_RE, (m, a, _c, b, rest) => (done.has(taskKey(rest)) ? a + "x" + b + rest : m));
 }
 
+/**
+ * Markdown → HTML seguro. Los pendientes "texto — **fecha**" se pintan como en la vista Pendientes:
+ * renglón con círculo, texto y la fecha en una pastilla (roja si ya pasó, de tu color si es hoy).
+ */
+function renderMd(md: string) {
+  const html = DOMPurify.sanitize(marked.parse(md, { async: false }) as string).replace(/ disabled=""/g, "");
+  return html.replace(
+    /(<li>\s*<input[^>]*type="checkbox"[^>]*>)([\s\S]*?)\s+—\s+<strong>([^<]+)<\/strong>\s*<\/li>/g,
+    (_m, box: string, text: string, when: string) => {
+      const p = parseWhen(when);
+      const t: Task | null = p ? { noteId: "", idx: 0, text: "", done: false, due: p.due, hasTime: p.hasTime } : null;
+      const label = t ? whenLabel(t) : when;
+      const g = t ? groupOf(t) : "none";
+      return `${box}<span class="ttext">${text.trim()}</span><span class="twhen ${g}">${label}</span></li>`;
+    },
+  );
+}
+
 function timeAgo(secs: number) {
   const diff = Date.now() / 1000 - secs;
   if (diff < 60) return "ahora";
@@ -267,17 +289,24 @@ export default function App() {
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState<string>(() => localStorage.getItem("taskai.model") ?? "");
   const [ai, setAi] = useState<AiState>("idle");
+  const [power, setPower] = useState<"idle" | "starting" | "stopping">("idle"); // encendiendo/apagando Ollama
+  const [ollamaInstalled, setOllamaInstalled] = useState(true);
+  const startedRef = useRef(false); // el auto-encendido solo una vez por sesión
   const [aiError, setAiError] = useState("");
-  const [folder, setFolder] = useState("");
   const [listOpen, setListOpen] = useState(false); // cajón de notas en pantallas angostas
   const [view, setView] = useState<"raw" | "ai">("raw"); // pestaña activa en pantallas angostas
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [folderFilter, setFolderFilter] = useState<string | null>(null);
   const [newFolder, setNewFolder] = useState<string | null>(null); // input de nueva carpeta
   const [moveOpen, setMoveOpen] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [accent, setAccent] = useState(savedAccent); // color principal (Configuración → Apariencia)
+  const [sortBy, setSortBy] = useState<"recent" | "az">("recent"); // orden de las tarjetas del tablero
+  const [section, setSection] = useState<Section>("notes"); // qué muestra el área principal sin nota abierta
+  const [structMap, setStructMap] = useState<Record<string, string>>({}); // versiones ordenadas (para Pendientes)
+  const [streamText, setStreamText] = useState(""); // lo que la IA va escribiendo en vivo
+  const streamIdRef = useRef<string | null>(null);
+  const streamNotesRef = useRef<string[]>([]);
   const [title, setTitle] = useState(""); // título opcional que escribe el usuario
   // Modo lectura: esconde el editor y deja solo la versión ordenada (se recuerda entre sesiones)
   const [reading, setReading] = useState(() => {
@@ -340,12 +369,53 @@ export default function App() {
   notesRef.current = notes;
 
   const refresh = useCallback(async () => {
-    const [n, f] = await Promise.all([
+    const [n, f, s] = await Promise.all([
       invoke<NoteMeta[]>("list_notes"),
       invoke<FolderInfo[]>("list_folders"),
+      invoke<Record<string, string>>("all_structured"),
     ]);
     setNotes(n);
     setFolders(f);
+    setStructMap(s);
+  }, []);
+
+  /** Guarda la versión ordenada de una nota y la deja al día en la vista Pendientes. */
+  async function putStructured(id: string, md: string) {
+    setStructMap((m) => ({ ...m, [id]: md }));
+    await invoke("save_structured", { id, content: md });
+  }
+
+  // Todos los pendientes de todas las notas (se recalculan al cambiar de día con `now`)
+  const tasks = useMemo(
+    () => Object.entries(structMap).flatMap(([id, md]) => parseTasks(id, md)),
+    [structMap],
+  );
+  const tasksRef = useRef<Task[]>([]);
+  tasksRef.current = tasks;
+
+  // Recordatorios: revisa cada 30 s si toca avisar de algo (mientras la app esté abierta)
+  useEffect(() => {
+    if (!onboarded) return;
+    const titleOf = (id: string) => notesRef.current.find((n) => n.id === id)?.title ?? "TaskAI";
+    const run = () => {
+      if (notesRef.current.length) checkReminders(tasksRef.current, titleOf).catch(() => {});
+    };
+    const first = setTimeout(run, 4000);
+    const t = setInterval(run, 30000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
+  }, [onboarded]);
+
+  // Streaming: la IA manda su respuesta en pedacitos y aquí se va mostrando
+  useEffect(() => {
+    const off = listen<{ id: string; text: string }>("ai-stream", (e) => {
+      if (e.payload.id === streamIdRef.current) setStreamText(e.payload.text);
+    });
+    return () => {
+      off.then((f) => f());
+    };
   }, []);
 
   useEffect(() => {
@@ -391,17 +461,52 @@ export default function App() {
     } catch {
       setModels([]);
       setAi("off");
+      invoke<{ installed: boolean }>("ollama_status").then((s) => setOllamaInstalled(s.installed));
     }
   }, []);
 
+  /** Enciende o apaga Ollama desde TaskAI. */
+  const setAiPower = useCallback(
+    async (on: boolean) => {
+      setPower(on ? "starting" : "stopping");
+      try {
+        await invoke(on ? "ollama_start" : "ollama_stop");
+        if (on) await checkAi();
+        else {
+          setModels([]);
+          setAi("off");
+        }
+        setToast({ text: on ? "IA encendida" : "IA apagada: se liberó la memoria de tu tarjeta de video" });
+      } catch (e) {
+        const msg = String(e);
+        setToast({ text: msg.includes("NOT_INSTALLED") ? "Primero instala Ollama (Configuración → Inteligencia artificial)" : msg });
+        await checkAi();
+      } finally {
+        setPower("idle");
+      }
+    },
+    [checkAi],
+  );
+
   const loadAll = useCallback(async () => {
-    const cfg = await invoke<{ name: string; onboarded: boolean }>("get_config");
+    const cfg = await invoke<{ name: string; onboarded: boolean; start_ai_on_open: boolean }>("get_config");
     setUserName(cfg.name);
     setOnboarded(cfg.onboarded);
     if (!cfg.onboarded) return;
+    await invoke("discard_blank_notes").catch(() => {}); // notas vacías que quedaron de antes
     refresh();
+    // Enciende la IA sola al abrir TaskAI (si está instalada y el usuario no lo desactivó)
+    if (cfg.start_ai_on_open && !startedRef.current) {
+      startedRef.current = true;
+      const st = await invoke<{ installed: boolean; running: boolean }>("ollama_status");
+      setOllamaInstalled(st.installed);
+      if (st.installed && !st.running) {
+        setPower("starting");
+        await invoke("ollama_start").catch(() => {});
+        setPower("idle");
+      }
+    }
     checkAi();
-    invoke<string>("notes_folder").then(setFolder);
   }, [refresh, checkAi]);
 
   useEffect(() => {
@@ -412,7 +517,77 @@ export default function App() {
     if (model) localStorage.setItem("taskai.model", model);
   }, [model]);
 
+  /** Guarda ya mismo la nota abierta (sin esperar al guardado automático) antes de salir de ella. */
+  async function flushNote() {
+    if (!activeId) return;
+    try {
+      await invoke("save_note", { id: activeId, content });
+      await invoke("set_title", { id: activeId, title });
+      // Si la dejaste en blanco, no se queda guardada una "Nota sin título" vacía
+      if (!content.trim() && !title.trim()) await invoke("discard_if_blank", { id: activeId });
+    } catch {
+      /* la nota ya no existe (la borraron): no hay nada que guardar */
+    }
+  }
+
+  // Atajos de teclado (la lista visible está en Configuración → Atajos de teclado).
+  // El manejador se renueva en cada render para usar siempre el estado actual.
+  const keysRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keysRef.current = (e: KeyboardEvent) => {
+    if (onboarded !== true) return;
+    const ctrl = e.ctrlKey || e.metaKey;
+    const k = e.key.toLowerCase();
+    if (ctrl && k === "n") {
+      e.preventDefault();
+      newNote();
+    } else if (ctrl && k === "k") {
+      e.preventDefault();
+      (async () => {
+        if (section !== "notes" || activeId) await go("notes");
+        requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".board .search input")?.focus());
+      })();
+    } else if (ctrl && e.key === "Enter" && activeId) {
+      e.preventDefault();
+      if (model && ai !== "working" && aiText.length >= MIN_CHARS) runAi(aiText, activeId);
+    } else if (ctrl && k === "e" && activeId) {
+      e.preventDefault();
+      setReading((r) => !r);
+    } else if (ctrl && e.key === ",") {
+      e.preventDefault();
+      go("settings");
+    } else if (e.key === "Escape" && !ask && !moveOpen && !document.querySelector(".lightbox")) {
+      if (listOpen) setListOpen(false);
+      else if (activeId) goHome();
+      else if (section !== "notes") go("notes");
+      else if (search) setSearch("");
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keysRef.current(e);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  /** Cambia de sección (Notas, Pendientes, Papelera, Configuración); cierra la nota abierta. */
+  async function go(s: Section) {
+    setSection(s);
+    setListOpen(false);
+    if (activeId) await goHome();
+  }
+
+  /** Cierra la nota y vuelve al tablero de tarjetas. */
+  async function goHome() {
+    await flushNote();
+    setActiveId(null);
+    setContent("");
+    setTitle("");
+    setStructured("");
+    setListOpen(false);
+    refresh();
+  }
+
   async function openNote(id: string) {
+    if (activeId && activeId !== id) await flushNote();
     const n = await invoke<Note>("read_note", { id });
     setActiveId(id);
     setListOpen(false);
@@ -424,17 +599,45 @@ export default function App() {
     setAi(models.length ? (n.structured ? "done" : "idle") : "off");
   }
 
+  const creatingRef = useRef(false); // evita crear dos notas con un doble clic
+
+  /**
+   * Nueva nota, sin crear notas vacías de más:
+   *  - si ya estás en una nota en blanco, solo te deja escribir en ella;
+   *  - si hay otra nota en blanco guardada, abre esa en vez de crear otra.
+   */
   async function newNote() {
-    const id = await invoke<string>("create_note", { folder: folderFilter });
-    await refresh();
-    await openNote(id);
+    if (creatingRef.current) return;
+    const focusEditor = () =>
+      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".editor textarea")?.focus());
+    if (activeId && !content.trim() && !title.trim()) {
+      setReading(false);
+      focusEditor();
+      setToast({ text: "Ya tienes una nota en blanco abierta: escribe aquí ✍" });
+      return;
+    }
+    creatingRef.current = true;
+    try {
+      const blank = notes.find((n) => n.id !== activeId && !n.preview && n.title === "Nota sin título" && !n.pinned);
+      if (blank) {
+        await openNote(blank.id);
+      } else {
+        const id = await invoke<string>("create_note", { folder: folderFilter });
+        await refresh();
+        await openNote(id);
+      }
+      setReading(false);
+      focusEditor();
+    } finally {
+      creatingRef.current = false;
+    }
   }
 
   function askRemoveNote(id: string, title: string) {
     setAsk({
-      title: "¿Borrar esta nota?",
-      text: `“${title}” se borrará para siempre, junto con su versión ordenada. No se puede deshacer.`,
-      ok: "Sí, borrar",
+      title: "¿Mandar a la papelera?",
+      text: `“${title}” se va a la papelera. Puedes recuperarla durante 30 días.`,
+      ok: "Sí, a la papelera",
       run: async () => {
         await invoke("delete_note", { id });
         if (id === activeId) {
@@ -444,6 +647,13 @@ export default function App() {
           setStructured("");
         }
         refresh();
+        setToast({
+          text: "Nota enviada a la papelera",
+          undo: async () => {
+            await invoke("restore_note", { id });
+            refresh();
+          },
+        });
       },
     });
   }
@@ -498,15 +708,24 @@ export default function App() {
       const userTitle = titleRef.current.trim();
       try {
         const ann = annotateDates(text);
-        let fresh = normalizeTimes(
-          stripNotes(await invoke<string>("ai_structure", { text: ann.text, model, ...dateContext() }), ann.notes),
-        );
+        streamIdRef.current = id;
+        streamNotesRef.current = ann.notes;
+        setStreamText("");
+        let fresh: string;
+        try {
+          fresh = normalizeTimes(
+            stripNotes(await invoke<string>("ai_structure", { id, text: ann.text, model, ...dateContext() }), ann.notes),
+          );
+        } finally {
+          streamIdRef.current = null;
+          setStreamText("");
+        }
         // Si el usuario puso título, ese manda sobre el que inventó la IA.
         if (userTitle) {
           fresh = /^# .*/m.test(fresh) ? fresh.replace(/^# .*/m, `# ${userTitle}`) : `# ${userTitle}\n\n${fresh}`;
         }
         const out = activeRef.current === id ? carryChecks(structuredRef.current, fresh) : fresh;
-        await invoke("save_structured", { id, content: out });
+        await putStructured(id, out);
         lastSent.current = aiKeyOf(userTitle, text);
         if (activeRef.current === id) {
           setStructured(out);
@@ -524,7 +743,7 @@ export default function App() {
             const from = meta.folder;
             await moveTo(id, to, false);
             setToast({
-              text: `Movida a ${icon(to)} ${to}`,
+              text: `Movida a ${to}`,
               undo: () => moveTo(id, from, true),
             });
           }
@@ -560,11 +779,13 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiKey, activeId, model, pinned, ai === "working", ai === "off"]);
 
-  const html = useMemo(
-    () =>
-      DOMPurify.sanitize(marked.parse(structured, { async: false }) as string).replace(/ disabled=""/g, ""),
-    [structured]
-  );
+  const html = useMemo(() => renderMd(structured), [structured]);
+
+  // El título de la IA (h1) va aparte para poner los #hashtags justo debajo, como en un documento.
+  const [htmlHead, htmlBody] = useMemo(() => {
+    const m = html.match(/^\s*<h1[^>]*>[\s\S]*?<\/h1>/);
+    return m ? [m[0], html.slice(m[0].length)] : ["", html];
+  }, [html]);
 
   const allTags = useMemo(() => [...new Set(notes.flatMap((n) => n.tags))].sort(), [notes]);
 
@@ -576,20 +797,45 @@ export default function App() {
     return okSearch && okTag && okFolder;
   });
 
-  const listTitle = tagFilter
-    ? tagFilter
-    : folderFilter
-      ? `${icon(folderFilter)} ${folderFilter}`
-      : "Todas las notas";
+  const sorted = sortBy === "az" ? [...visible].sort((a, b) => a.title.localeCompare(b.title, "es")) : visible;
+  const viewTitle = tagFilter ?? folderFilter ?? "Todas las notas";
+  const today = new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" });
 
-  async function onTaskClick(e: React.MouseEvent<HTMLElement>) {
-    const box = e.target as HTMLElement;
-    if (!activeId || !(box instanceof HTMLInputElement) || box.type !== "checkbox") return;
+  async function onTaskClick(e: ReactMouseEvent<HTMLElement>) {
+    // Cuenta el clic en cualquier parte del renglón del pendiente, no solo en el círculo
+    const li = (e.target as HTMLElement).closest("li");
+    const box = li?.querySelector(':scope > input[type="checkbox"]');
+    if (!activeId || !(box instanceof HTMLInputElement)) return;
+    if (e.target !== box) e.preventDefault();
     const all = Array.from(e.currentTarget.querySelectorAll('input[type="checkbox"]'));
     const next = toggleTask(structured, all.indexOf(box));
     setStructured(next);
-    await invoke("save_structured", { id: activeId, content: next });
+    await putStructured(activeId, next);
   }
+
+  /** Palomear desde la vista Pendientes (también si esa nota está abierta). */
+  async function toggleFromList(t: Task) {
+    const md = structMap[t.noteId];
+    if (md == null) return;
+    const next = toggleTask(md, t.idx);
+    if (t.noteId === activeId) setStructured(next);
+    await putStructured(t.noteId, next);
+  }
+
+  // Lo que la IA lleva escrito, ya limpio (sin anotaciones [..] y con horas "1:00 PM")
+  const streamHtml = useMemo(() => {
+    if (!streamText) return "";
+    let md = streamText.replace(/^\s*```(?:markdown|md)?\s*/, "");
+    md = normalizeTimes(stripNotes(md, streamNotesRef.current));
+    const t = titleRef.current.trim();
+    if (t) md = md.replace(/^# .*/m, `# ${t}`);
+    return renderMd(md);
+  }, [streamText]);
+  const openTasks = tasks.filter((t) => !t.done && notes.some((n) => n.id === t.noteId));
+  const urgent = openTasks.filter((t) => {
+    const g = groupOf(t);
+    return g === "late" || g === "today";
+  }).length;
 
   async function togglePin() {
     if (!active) return;
@@ -614,9 +860,22 @@ export default function App() {
     });
   }
 
-  function pickFolder(f: string | null) {
-    setFolderFilter(f);
-    setTagFilter(null);
+  /** Elegir carpeta o etiqueta en el menú siempre lleva al tablero con ese filtro. */
+  async function pickFilter(folder: string | null, tag: string | null = null) {
+    setSection("notes");
+    setFolderFilter(folder);
+    setTagFilter(tag);
+    setListOpen(false);
+    if (activeId) await goHome();
+  }
+
+  function askRemoveFolder(name: string) {
+    setAsk({
+      title: "¿Borrar esta carpeta?",
+      text: `Se borrará la carpeta “${name}”. Solo se puede si está vacía.`,
+      ok: "Sí, borrar",
+      run: () => removeFolder(name),
+    });
   }
 
   const words = content.trim() ? content.trim().split(/\s+/).length : 0;
@@ -640,58 +899,81 @@ export default function App() {
     return <Onboarding theme={theme} setTheme={setTheme} setModel={setModel} onDone={loadAll} />;
 
   return (
-    <div className={`app ${libHidden ? "focus" : ""}`}>
-      {/* ---------- Biblioteca: carpetas + notas en una sola columna ---------- */}
+    <div className={`app ${libHidden && activeId ? "focus" : ""}`}>
+      {/* ---------- Menú lateral: carpetas, etiquetas y ajustes ---------- */}
       {listOpen && <div className="backdrop" onClick={() => setListOpen(false)} />}
-      <aside className={`library ${listOpen ? "open" : ""}`}>
-        <header className="lib-head">
-          <div className="brand">
-            <div className="logo">✦</div>
-            <span>TaskAI</span>
-          </div>
-          <button className="new-note" onClick={newNote}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-            </svg>
-            Nueva nota
-          </button>
-        </header>
-
-        <div className="search">
-          <span>⌕</span>
-          <input placeholder="Buscar notas…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <aside className={`sidebar ${listOpen ? "open" : ""}`}>
+        <div className="brand">
+          <Logo height={22} />
+          <span>TaskAI</span>
         </div>
+        <button className="new-note" onClick={newNote}>
+          <Icon name="pencil" size={15} />
+          Nueva nota
+        </button>
 
-        <div className="chips" role="tablist" aria-label="Carpetas">
-          <button className={`fchip ${!folderFilter && !tagFilter ? "on" : ""}`} onClick={() => pickFolder(null)}>
-            Todas <em>{notes.length}</em>
+        <nav className="nav" aria-label="Carpetas">
+          <button
+            className={`nav-item ${section === "notes" && !folderFilter && !tagFilter ? "on" : ""}`}
+            onClick={() => pickFilter(null)}
+          >
+            <span className="nav-ico">
+              <Icon name="grid" />
+            </span>
+            <span className="nav-label">Todas las notas</span>
+            <em>{notes.length}</em>
           </button>
-          {folders.map((f) => (
-            <button
-              key={f.name}
-              className={`fchip ${folderFilter === f.name && !tagFilter ? "on" : ""}`}
-              title={f.name}
-              onClick={() => pickFolder(f.name)}
-              onContextMenu={(e) => {
-                if (f.builtin) return;
-                e.preventDefault();
-                setAsk({
-                  title: "¿Borrar esta carpeta?",
-                  text: `Se borrará la carpeta “${f.name}”. Solo se puede si está vacía.`,
-                  ok: "Sí, borrar",
-                  run: () => removeFolder(f.name),
-                });
-              }}
-            >
-              {icon(f.name)} {f.name}
-              {f.count > 0 && <em>{f.count}</em>}
-            </button>
-          ))}
+          <button
+            className={`nav-item ${section === "tasks" ? "on" : ""}`}
+            onClick={() => go("tasks")}
+          >
+            <span className="nav-ico">
+              <Icon name="checkCircle" />
+            </span>
+            <span className="nav-label">Pendientes</span>
+            {urgent > 0 ? (
+              <b className="nav-badge" title="Para hoy o atrasados">
+                {urgent}
+              </b>
+            ) : (
+              openTasks.length > 0 && <em>{openTasks.length}</em>
+            )}
+          </button>
+
+          <div className="nav-section">Carpetas</div>
+          {folders.map((f) => {
+            const look = folderLook(f.name);
+            return (
+              <div key={f.name} className="nav-row">
+                <button
+                  className={`nav-item ${folderFilter === f.name && !tagFilter ? "on" : ""}`}
+                  style={{ "--h": look.hue } as CSSProperties}
+                  onClick={() => pickFilter(f.name)}
+                  onContextMenu={(e) => {
+                    if (f.builtin) return;
+                    e.preventDefault();
+                    askRemoveFolder(f.name);
+                  }}
+                >
+                  <span className="nav-ico tinted">
+                    <Icon name={look.icon} />
+                  </span>
+                  <span className="nav-label">{f.name}</span>
+                  {f.count > 0 && <em>{f.count}</em>}
+                </button>
+                {!f.builtin && (
+                  <button className="nav-del" title="Borrar carpeta" aria-label={`Borrar carpeta ${f.name}`} onClick={() => askRemoveFolder(f.name)}>
+                    <Icon name="x" size={13} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
           {newFolder !== null ? (
             <input
-              className="fchip-input"
+              className="nav-input"
               autoFocus
-              placeholder="Nueva carpeta"
+              placeholder="Nombre de la carpeta"
               value={newFolder}
               maxLength={40}
               onChange={(e) => setNewFolder(e.target.value)}
@@ -702,142 +984,261 @@ export default function App() {
               onBlur={addFolder}
             />
           ) : (
-            <button className="fchip add" title="Nueva carpeta" onClick={() => setNewFolder("")}>
-              ＋
+            <button className="nav-item add" onClick={() => setNewFolder("")}>
+              <span className="nav-ico">
+                <Icon name="plus" />
+              </span>
+              <span className="nav-label">Nueva carpeta</span>
             </button>
           )}
-        </div>
 
-        {allTags.length > 0 && (
-          <div className="tags">
-            {allTags.map((t) => (
-              <button
-                key={t}
-                className={`tag ${tagFilter === t ? "on" : ""}`}
-                onClick={() => setTagFilter(tagFilter === t ? null : t)}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="list-title">{listTitle}</div>
-        <div className="items">
-          {visible.map((n) => (
-            <div
-              key={n.id}
-              role="button"
-              tabIndex={0}
-              className={`item ${n.id === activeId ? "on" : ""}`}
-              onClick={() => openNote(n.id)}
-              onKeyDown={(e) => {
-                if (e.target !== e.currentTarget) return;
-                if (e.key === "Enter" || e.key === " ") openNote(n.id);
-                if (e.key === "Delete") askRemoveNote(n.id, n.title);
-              }}
-            >
-              <button
-                className="item-del"
-                title="Borrar nota"
-                aria-label={`Borrar nota ${n.title}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  askRemoveNote(n.id, n.title);
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6" />
-                </svg>
-              </button>
-              <div className="item-title">
-                {n.pinned && <span title="Versión fijada">📌 </span>}
-                {n.title}
-              </div>
-              <div className="item-preview">{n.preview || "Sin contenido"}</div>
-              <div className="item-time">
-                {!folderFilter && (
-                  <span className="item-folder">
-                    {icon(n.folder)} {n.folder}
+          {allTags.length > 0 && (
+            <>
+              <div className="nav-section">Etiquetas</div>
+              {allTags.map((t) => (
+                <button
+                  key={t}
+                  className={`nav-item ${tagFilter === t ? "on" : ""}`}
+                  onClick={() => pickFilter(null, tagFilter === t ? null : t)}
+                >
+                  <span className="nav-ico">
+                    <Icon name="hash" />
                   </span>
-                )}
-                {timeAgo(n.modified)}
-              </div>
-            </div>
-          ))}
-          {visible.length === 0 && <p className="hint pad">No hay notas aquí todavía.</p>}
-        </div>
+                  <span className="nav-label">{t.replace(/^#/, "")}</span>
+                </button>
+              ))}
+            </>
+          )}
 
-        <footer className="lib-foot">
-          <button
-            className={`ai-dot ${ai === "off" ? "off" : "on"}`}
-            title="Configuración de la IA"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <i />
-            <span>{ai === "off" ? "IA desconectada" : model || "sin modelo"}</span>
+          <div className="nav-spacer" />
+          <button className={`nav-item ${section === "trash" && !activeId ? "on" : ""}`} onClick={() => go("trash")}>
+            <span className="nav-ico">
+              <Icon name="trash" />
+            </span>
+            <span className="nav-label">Papelera</span>
           </button>
-          <div className="theme-switch" role="radiogroup" aria-label="Tema">
-            {(
-              [
-                ["light", "☀", "Claro"],
-                ["dark", "☾", "Oscuro"],
-                ["system", "◐", "Sistema"],
-              ] as const
-            ).map(([k, ico, label]) => (
-              <button
-                key={k}
-                role="radio"
-                aria-checked={theme === k}
-                className={theme === k ? "on" : ""}
-                title={`Tema: ${label}`}
-                onClick={() => setTheme(k)}
-              >
-                {ico}
-              </button>
-            ))}
+        </nav>
+
+        <footer className="side-foot">
+          <div className="side-foot-row">
+            <button
+              className={`ai-dot ${power !== "idle" ? "busy" : ai === "off" ? "off" : "on"}`}
+              title="Configuración de la IA"
+              onClick={() => go("settings")}
+            >
+              <i />
+              <span>
+                {power === "starting"
+                  ? "Encendiendo…"
+                  : power === "stopping"
+                    ? "Apagando…"
+                    : ai === "off"
+                      ? "IA apagada"
+                      : model || "sin modelo"}
+              </span>
+            </button>
+            <button
+              className={`power-btn ${ai !== "off" ? "on" : ""}`}
+              disabled={power !== "idle"}
+              onClick={() => setAiPower(ai === "off")}
+              title={ai === "off" ? "Encender la IA" : "Apagar la IA (libera la tarjeta de video)"}
+              aria-label={ai === "off" ? "Encender la IA" : "Apagar la IA"}
+            >
+              <Icon name="power" size={15} />
+            </button>
+            <div className="theme-switch" role="radiogroup" aria-label="Tema">
+              {(
+                [
+                  ["light", "sun", "Claro"],
+                  ["dark", "moon", "Oscuro"],
+                  ["system", "monitor", "Sistema"],
+                ] as const
+              ).map(([k, ico, label]) => (
+                <button
+                  key={k}
+                  role="radio"
+                  aria-checked={theme === k}
+                  className={theme === k ? "on" : ""}
+                  title={`Tema: ${label}`}
+                  onClick={() => setTheme(k)}
+                >
+                  <Icon name={ico} size={14} />
+                </button>
+              ))}
+            </div>
           </div>
-          <button className="icon-btn" title="Configuración" onClick={() => setSettingsOpen(true)}>
-            ⚙
+          <button className={`settings-btn ${section === "settings" && !activeId ? "on" : ""}`} onClick={() => go("settings")}>
+            <Icon name="settings" size={16} />
+            Configuración
           </button>
         </footer>
       </aside>
 
-      {/* ---------- Área principal ---------- */}
+      {/* ---------- Área principal: tablero de notas o la nota abierta ---------- */}
       <main className="main">
         {!activeId ? (
-          <div className="hero">
-            <div className="hero-bg" />
-            <button className="icon-btn menu-btn hero-menu" title="Mostrar u ocultar notas" onClick={toggleLibrary}>
-              ☰
-            </button>
-            <div className="hero-content">
-              <span className="pill">{userName ? `👋 Hola, ${userName}` : "✦ Tu IA, tus apuntes"}</span>
-              <h1>Escribe como piensas.</h1>
-              <p>
-                Tú escribes rápido y desordenado. TaskAI lo ordena en vivo a la derecha,{" "}
-                <br />
-                sin tocar ni una letra de lo que escribiste.
-              </p>
-              <button className="cta" onClick={newNote}>
-                Empezar una nota →
+          <div className="board">
+            <header className="board-head">
+              <button className="icon-btn only-narrow" title="Carpetas" onClick={() => setListOpen(true)}>
+                <Icon name="menu" size={18} />
               </button>
-            </div>
+              <div className="board-title">
+                <p className="board-hello">
+                  {userName ? `Hola, ${userName}` : "Hola"} · {today}
+                </p>
+                <h1>{SECTION_TITLE[section] ?? viewTitle}</h1>
+              </div>
+            </header>
+
+            {section === "settings" ? (
+              <Settings
+                models={models}
+                model={model}
+                setModel={setModel}
+                aiOff={ai === "off"}
+                onRefresh={checkAi}
+                theme={theme}
+                setTheme={setTheme}
+                accent={accent}
+                setAccent={(id) => {
+                  applyAccent(id);
+                  setAccent(id);
+                }}
+                onProfileChanged={loadAll}
+                power={power}
+                onPower={setAiPower}
+              />
+            ) : section === "trash" ? (
+              <TrashView
+                ask={setAsk}
+                onRestored={(f) => {
+                  refresh();
+                  setToast({ text: `Nota restaurada en ${f}` });
+                }}
+              />
+            ) : section === "tasks" ? (
+              <TasksView tasks={tasks} notes={notes} onToggle={toggleFromList} onOpen={openNote} />
+            ) : (
+              <>
+            {notes.length > 0 && (
+              <div className="board-bar">
+                <label className="search">
+                  <Icon name="search" size={15} />
+                  <input placeholder="Buscar notas…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                  {search && (
+                    <button className="search-clear" onClick={() => setSearch("")} aria-label="Borrar búsqueda">
+                      <Icon name="x" size={13} />
+                    </button>
+                  )}
+                </label>
+                <div className="seg" role="radiogroup" aria-label="Ordenar">
+                  <button role="radio" aria-checked={sortBy === "recent"} className={sortBy === "recent" ? "on" : ""} onClick={() => setSortBy("recent")}>
+                    Recientes
+                  </button>
+                  <button role="radio" aria-checked={sortBy === "az"} className={sortBy === "az" ? "on" : ""} onClick={() => setSortBy("az")}>
+                    A–Z
+                  </button>
+                </div>
+                <span className="board-count">
+                  {sorted.length} {sorted.length === 1 ? "nota" : "notas"}
+                </span>
+              </div>
+            )}
+
+            {notes.length === 0 ? (
+              <div className="hero">
+                <div className="hero-bg" />
+                <div className="hero-content">
+                  <span className="pill">✦ Tu IA, tus apuntes</span>
+                  <h1>Escribe como piensas.</h1>
+                  <p>
+                    Tú escribes rápido y desordenado. TaskAI lo ordena en vivo,{" "}
+                    <br />
+                    sin tocar ni una letra de lo que escribiste.
+                  </p>
+                  <button className="cta" onClick={newNote}>
+                    Empezar una nota →
+                  </button>
+                </div>
+              </div>
+            ) : sorted.length === 0 ? (
+              <div className="board-none">
+                <p>{search ? `Nada coincide con “${search}”.` : "No hay notas aquí todavía."}</p>
+                {!search && (
+                  <button className="btn" onClick={newNote}>
+                    <Icon name="plus" size={14} /> Nueva nota
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="cards">
+                {sorted.map((n) => (
+                  <div
+                    key={n.id}
+                    role="button"
+                    tabIndex={0}
+                    className="card-note"
+                    onClick={() => openNote(n.id)}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") openNote(n.id);
+                      if (e.key === "Delete") askRemoveNote(n.id, n.title);
+                    }}
+                  >
+                    <div className="card-top">
+                      <FolderTag name={n.folder} />
+                      {n.pinned && (
+                        <span className="card-pin" title="Versión fijada">
+                          <Icon name="pin" size={14} />
+                        </span>
+                      )}
+                      <button
+                        className="card-del"
+                        title="Borrar nota"
+                        aria-label={`Borrar nota ${n.title}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          askRemoveNote(n.id, n.title);
+                        }}
+                      >
+                        <Icon name="trash" size={15} />
+                      </button>
+                    </div>
+                    <h3 className="card-title">{n.title}</h3>
+                    <p className="card-preview">{n.preview || "Sin contenido"}</p>
+                    <div className="card-foot">
+                      {n.tags.slice(0, 3).map((t) => (
+                        <span key={t} className="card-tag">
+                          {t}
+                        </span>
+                      ))}
+                      <span className="card-time">{timeAgo(n.modified)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+              </>
+            )}
           </div>
         ) : (
           <>
             <header className="toolbar">
-              <button className="icon-btn menu-btn" title="Mostrar u ocultar notas" onClick={toggleLibrary}>
-                ☰
+              <button className="icon-btn" title="Mostrar u ocultar el menú" onClick={toggleLibrary}>
+                <Icon name="menu" size={18} />
+              </button>
+              <button className="back-btn" onClick={goHome} title="Volver a tus notas">
+                <Icon name="back" size={16} />
+                <span className="btn-label">Notas</span>
               </button>
               {active && (
                 <div className="move">
                   <button
-                    className="folder-chip"
+                    className="folder-pick"
                     title={active.locked ? "Carpeta elegida por ti · clic para mover" : "La IA eligió esta carpeta · clic para mover"}
                     onClick={() => setMoveOpen((o) => !o)}
                   >
-                    {icon(active.folder)} <span className="chip-label">{active.folder}</span>
+                    <FolderTag name={active.folder} />
                     <span className="caret">▾</span>
                   </button>
                   {moveOpen && (
@@ -845,21 +1246,27 @@ export default function App() {
                       <div className="menu-backdrop" onClick={() => setMoveOpen(false)} />
                       <div className="menu left">
                         <div className="menu-title">
-                          {active.locked ? "📌 Carpeta elegida por ti" : "✦ La IA eligió esta carpeta"}
+                          {active.locked ? "Carpeta elegida por ti" : "✦ La IA eligió esta carpeta"}
                         </div>
-                        {folders.map((f) => (
-                          <button
-                            key={f.name}
-                            className={f.name === active.folder ? "on" : ""}
-                            onClick={async () => {
-                              setMoveOpen(false);
-                              await moveTo(active.id, f.name, true);
-                            }}
-                          >
-                            {icon(f.name)} {f.name}
-                            {f.name === active.folder && <span>✓</span>}
-                          </button>
-                        ))}
+                        {folders.map((f) => {
+                          const look = folderLook(f.name);
+                          return (
+                            <button
+                              key={f.name}
+                              className={f.name === active.folder ? "on" : ""}
+                              onClick={async () => {
+                                setMoveOpen(false);
+                                await moveTo(active.id, f.name, true);
+                              }}
+                            >
+                              <i className="menu-ico" style={{ "--h": look.hue } as CSSProperties}>
+                                <Icon name={look.icon} size={15} />
+                              </i>
+                              {f.name}
+                              {f.name === active.folder && <span>✓</span>}
+                            </button>
+                          );
+                        })}
                       </div>
                     </>
                   )}
@@ -871,7 +1278,7 @@ export default function App() {
               <div className="tools">
                 {pinned && ai !== "working" ? (
                   <span className="status pin" title="Versión fijada: la IA no la cambia sola">
-                    📌 <span className="status-label">Fijada</span>
+                    <Icon name="pin" size={14} /> <span className="status-label">Fijada</span>
                   </span>
                 ) : (
                   <span className={`status ${status[ai].cls}`} title={aiError || status[ai].label}>
@@ -884,15 +1291,7 @@ export default function App() {
                   aria-pressed={reading}
                   title={reading ? "Volver a escribir" : "Modo lectura: solo la versión ordenada"}
                 >
-                  {reading ? (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                    </svg>
-                  ) : (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z" />
-                    </svg>
-                  )}
+                  <Icon name={reading ? "pencil" : "read"} size={15} />
                   <span className="btn-label">{reading ? "Editar" : "Lectura"}</span>
                 </button>
                 <button
@@ -901,7 +1300,8 @@ export default function App() {
                   onClick={() => activeId && runAi(aiText, activeId)}
                   title={pinned ? "Revisar: la IA actualiza la versión fijada con tus apuntes" : "Ordenar ahora"}
                 >
-                  ✦<span className="btn-label"> {pinned ? "Revisar" : "Ordenar"}</span>
+                  <Icon name="sparkle" size={15} />
+                  <span className="btn-label">{pinned ? "Revisar" : "Ordenar"}</span>
                 </button>
               </div>
             </header>
@@ -977,7 +1377,7 @@ export default function App() {
                           : "Fijar: guarda esta versión y la IA ya no la cambia sola"
                       }
                     >
-                      📌 {pinned ? "Fijada" : "Fijar"}
+                      <Icon name="pin" size={13} /> {pinned ? "Fijada" : "Fijar"}
                     </button>
                   )}
                 </div>
@@ -989,26 +1389,47 @@ export default function App() {
                     </button>
                   </div>
                 )}
-                {ai === "off" ? (
+                {ai === "off" && ollamaInstalled ? (
+                  <div className="setup">
+                    <h3>La IA está apagada</h3>
+                    <p>Enciéndela para que ordene tu nota. Tus apuntes siguen guardándose aunque esté apagada.</p>
+                    <div className="setup-actions">
+                      <button className="btn primary" disabled={power !== "idle"} onClick={() => setAiPower(true)}>
+                        <Icon name="power" size={14} /> {power === "starting" ? "Encendiendo…" : "Encender la IA"}
+                      </button>
+                    </div>
+                  </div>
+                ) : ai === "off" ? (
                   <div className="setup">
                     <h3>Conecta la IA (gratis)</h3>
                     <p>TaskAI usa Ollama para correr la IA en tu propia computadora: privado y sin costo.</p>
                     <div className="setup-actions">
-                      <button className="btn" onClick={() => setSettingsOpen(true)}>
-                        ⚙ Ver pasos para mi sistema
+                      <button className="btn" onClick={() => go("settings")}>
+                        Ver pasos para mi sistema
                       </button>
                       <button className="link" onClick={checkAi}>
                         Ya lo instalé, conectar
                       </button>
                     </div>
                   </div>
+                ) : ai === "working" && streamHtml ? (
+                  <div className="md streaming" aria-live="polite">
+                    <div dangerouslySetInnerHTML={{ __html: streamHtml }} />
+                    <span className="stream-caret" aria-hidden="true" />
+                  </div>
                 ) : structured ? (
                   <>
-                    <article
-                      className={`md ${ai === "working" ? "dim" : ""}`}
-                      onClick={onTaskClick}
-                      dangerouslySetInnerHTML={{ __html: html }}
-                    />
+                    <div className={`md ${ai === "working" ? "dim" : ""}`} onClick={onTaskClick}>
+                      {htmlHead && <div dangerouslySetInnerHTML={{ __html: htmlHead }} />}
+                      {active && active.tags.length > 0 && (
+                        <div className="md-tags">
+                          {active.tags.map((t) => (
+                            <span key={t}>{t}</span>
+                          ))}
+                        </div>
+                      )}
+                      <div dangerouslySetInnerHTML={{ __html: htmlBody }} />
+                    </div>
                     <NoteImages names={images} />
                   </>
                 ) : (
@@ -1054,24 +1475,6 @@ export default function App() {
 
       {ask && <ConfirmDialog {...ask} onClose={() => setAsk(null)} />}
 
-      {settingsOpen && (
-        <Settings
-          onClose={() => setSettingsOpen(false)}
-          models={models}
-          model={model}
-          setModel={setModel}
-          aiOff={ai === "off"}
-          onRefresh={checkAi}
-          folder={folder}
-          theme={theme}
-          setTheme={setTheme}
-          accent={accent}
-          setAccent={(id) => {
-            applyAccent(id);
-            setAccent(id);
-          }}
-        />
-      )}
     </div>
   );
 }

@@ -18,7 +18,7 @@ const INBOX: &str = "Notas rápidas";
 
 // ----- Configuración del usuario (la llena el asistente de bienvenida) -----
 
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 struct AppConfig {
     #[serde(default)]
     name: String,
@@ -27,6 +27,20 @@ struct AppConfig {
     notes_dir: Option<String>,
     #[serde(default)]
     onboarded: bool,
+    /// Encender Ollama al abrir TaskAI si está apagado.
+    #[serde(default = "yes")]
+    start_ai_on_open: bool,
+    /// Apagar Ollama al cerrar TaskAI (libera la tarjeta de video y la RAM).
+    #[serde(default = "yes")]
+    stop_ai_on_exit: bool,
+}
+fn yes() -> bool {
+    true
+}
+impl Default for AppConfig {
+    fn default() -> Self {
+        AppConfig { name: String::new(), notes_dir: None, onboarded: false, start_ai_on_open: true, stop_ai_on_exit: true }
+    }
 }
 
 fn config_path() -> Result<PathBuf, String> {
@@ -84,6 +98,8 @@ struct ConfigView {
     notes_dir: String,
     default_dir: String,
     onboarded: bool,
+    start_ai_on_open: bool,
+    stop_ai_on_exit: bool,
 }
 
 #[tauri::command]
@@ -94,6 +110,8 @@ fn get_config() -> Result<ConfigView, String> {
         notes_dir: base_dir()?.to_string_lossy().to_string(),
         default_dir: default_dir()?.to_string_lossy().to_string(),
         onboarded: c.onboarded,
+        start_ai_on_open: c.start_ai_on_open,
+        stop_ai_on_exit: c.stop_ai_on_exit,
     })
 }
 
@@ -107,7 +125,7 @@ fn save_config(name: String, notes_dir: Option<String>, onboarded: bool) -> Resu
         }
         fs::create_dir_all(&p).map_err(|e| format!("No pude usar esa carpeta: {e}"))?;
     }
-    let cfg = AppConfig { name: name.trim().chars().take(40).collect(), notes_dir: chosen, onboarded };
+    let cfg = AppConfig { name: name.trim().chars().take(40).collect(), notes_dir: chosen, onboarded, ..load_config() };
     let s = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
     fs::write(config_path()?, s).map_err(|e| e.to_string())?;
     crate::notes_dir()?; // prepara las carpetas en la ubicación nueva
@@ -281,7 +299,7 @@ fn list_notes() -> Result<Vec<NoteMeta>, String> {
                 .collect::<Vec<_>>()
                 .join(" ")
                 .chars()
-                .take(90)
+                .take(220) // alcanza para las 3 líneas de la tarjeta; el CSS pone los "…"
                 .collect();
             notes.push(NoteMeta {
                 locked: meta.get(&id).map(|m| m.locked).unwrap_or(false),
@@ -414,21 +432,230 @@ fn create_note(folder: Option<String>) -> Result<String, String> {
     Ok(id)
 }
 
-#[tauri::command]
-fn delete_note(id: String) -> Result<(), String> {
-    let _ = fs::remove_file(structured_path(&id)?);
-    let mut meta = load_meta();
-    if meta.remove(&id).is_some() {
-        save_meta(&meta)?;
-    }
-    let (_, path) = find_note(&id)?;
-    // También sus imágenes pegadas
-    if let (Ok(content), Ok(dir)) = (fs::read_to_string(&path), images_dir()) {
+// ----- Papelera: borrar no es para siempre; las notas se pueden restaurar durante 30 días -----
+
+const TRASH_DAYS: u64 = 30;
+
+#[derive(Serialize, Deserialize, Clone)]
+struct TrashInfo {
+    folder: String,
+    deleted: u64,
+    title: String,
+    #[serde(default)]
+    preview: String,
+    #[serde(default)]
+    info: NoteInfo,
+}
+
+#[derive(Serialize)]
+struct TrashItem {
+    id: String,
+    folder: String,
+    title: String,
+    preview: String,
+    deleted: u64,
+    days_left: u64,
+}
+
+fn trash_dir() -> Result<PathBuf, String> {
+    Ok(notes_dir()?.join(".taskai").join("papelera"))
+}
+fn load_trash() -> HashMap<String, TrashInfo> {
+    trash_dir()
+        .ok()
+        .and_then(|d| fs::read_to_string(d.join("indice.json")).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+fn save_trash(t: &HashMap<String, TrashInfo>) -> Result<(), String> {
+    let dir = trash_dir()?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let s = serde_json::to_string_pretty(t).map_err(|e| e.to_string())?;
+    fs::write(dir.join("indice.json"), s).map_err(|e| e.to_string())
+}
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Título que se muestra: el que puso el usuario > el de la IA ("# ...") > la primera línea.
+fn display_title(id: &str, content: &str, meta: &HashMap<String, NoteInfo>) -> String {
+    meta.get(id)
+        .map(|m| m.title.clone())
+        .filter(|t| !t.is_empty())
+        .or_else(|| {
+            structured_path(id)
+                .ok()
+                .and_then(|p| fs::read_to_string(p).ok())
+                .and_then(|s| s.lines().find(|l| l.starts_with("# ")).map(|l| l[2..].trim().to_string()))
+                .filter(|t| !t.is_empty())
+        })
+        .unwrap_or_else(|| title_of(content))
+}
+
+/// Borra para siempre los archivos de una nota que está en la papelera (y sus imágenes).
+fn purge_files(id: &str) -> Result<(), String> {
+    let dir = trash_dir()?;
+    let raw = dir.join(format!("{}.md", safe_id(id)?));
+    if let (Ok(content), Ok(img)) = (fs::read_to_string(&raw), images_dir()) {
         for name in images_in(&content) {
-            let _ = fs::remove_file(dir.join(name));
+            let _ = fs::remove_file(img.join(name));
         }
     }
-    fs::remove_file(path).map_err(|e| e.to_string())
+    let _ = fs::remove_file(raw);
+    let _ = fs::remove_file(dir.join(format!("{id}.ordenada.md")));
+    Ok(())
+}
+
+/// Manda la nota a la papelera (se puede restaurar durante 30 días).
+#[tauri::command]
+fn delete_note(id: String) -> Result<(), String> {
+    let (folder, path) = find_note(&id)?;
+    let content = fs::read_to_string(&path).unwrap_or_default();
+    let mut meta = load_meta();
+    let title = display_title(&id, &content, &meta);
+    let preview: String = content
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !is_image_line(l))
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(160)
+        .collect();
+    let dir = trash_dir()?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::rename(&path, dir.join(format!("{id}.md"))).map_err(|e| e.to_string())?;
+    let sp = structured_path(&id)?;
+    if sp.exists() {
+        let _ = fs::rename(&sp, dir.join(format!("{id}.ordenada.md")));
+    }
+    let info = meta.remove(&id).unwrap_or_default();
+    save_meta(&meta)?;
+    let mut trash = load_trash();
+    trash.insert(id, TrashInfo { folder, deleted: now_secs(), title, preview, info });
+    save_trash(&trash)
+}
+
+/// Lo que hay en la papelera (y de paso borra lo que ya cumplió 30 días).
+#[tauri::command]
+fn list_trash() -> Result<Vec<TrashItem>, String> {
+    let mut trash = load_trash();
+    let now = now_secs();
+    let limit = TRASH_DAYS * 86400;
+    let expired: Vec<String> = trash.iter().filter(|(_, t)| now.saturating_sub(t.deleted) > limit).map(|(k, _)| k.clone()).collect();
+    for id in &expired {
+        purge_files(id)?;
+        trash.remove(id);
+    }
+    if !expired.is_empty() {
+        save_trash(&trash)?;
+    }
+    let mut items: Vec<TrashItem> = trash
+        .into_iter()
+        .map(|(id, t)| TrashItem {
+            days_left: TRASH_DAYS.saturating_sub(now.saturating_sub(t.deleted) / 86400),
+            id,
+            folder: t.folder,
+            title: t.title,
+            preview: t.preview,
+            deleted: t.deleted,
+        })
+        .collect();
+    items.sort_by(|a, b| b.deleted.cmp(&a.deleted));
+    Ok(items)
+}
+
+/// Saca la nota de la papelera y la regresa a su carpeta (o a Notas rápidas si esa ya no existe).
+#[tauri::command]
+fn restore_note(id: String) -> Result<String, String> {
+    safe_id(&id)?;
+    let mut trash = load_trash();
+    let t = trash.remove(&id).ok_or("Esa nota ya no está en la papelera")?;
+    let folder = if folder_names()?.contains(&t.folder) { t.folder } else { INBOX.to_string() };
+    let dir = trash_dir()?;
+    let to = notes_dir()?.join(&folder);
+    fs::create_dir_all(&to).map_err(|e| e.to_string())?;
+    fs::rename(dir.join(format!("{id}.md")), to.join(format!("{id}.md"))).map_err(|e| e.to_string())?;
+    let ordered = dir.join(format!("{id}.ordenada.md"));
+    if ordered.exists() {
+        let _ = fs::rename(ordered, structured_path(&id)?);
+    }
+    let mut meta = load_meta();
+    meta.insert(id, t.info);
+    save_meta(&meta)?;
+    save_trash(&trash)?;
+    Ok(folder)
+}
+
+/// Borra para siempre una nota de la papelera.
+#[tauri::command]
+fn purge_note(id: String) -> Result<(), String> {
+    safe_id(&id)?;
+    let mut trash = load_trash();
+    purge_files(&id)?;
+    trash.remove(&id);
+    save_trash(&trash)
+}
+
+#[tauri::command]
+fn empty_trash() -> Result<(), String> {
+    let trash = load_trash();
+    for id in trash.keys() {
+        purge_files(id)?;
+    }
+    save_trash(&HashMap::new())
+}
+
+/// Una nota sin texto ni título no vale la pena guardarla: se borra del todo (sin papelera).
+fn is_blank(id: &str, path: &PathBuf, meta: &HashMap<String, NoteInfo>) -> bool {
+    let content = fs::read_to_string(path).unwrap_or_default();
+    content.trim().is_empty() && meta.get(id).map(|m| m.title.is_empty() && !m.pinned).unwrap_or(true)
+}
+fn remove_blank(id: &str, path: &PathBuf, meta: &mut HashMap<String, NoteInfo>) {
+    let _ = fs::remove_file(path);
+    if let Ok(sp) = structured_path(id) {
+        let _ = fs::remove_file(sp);
+    }
+    meta.remove(id);
+}
+
+/// Si la nota quedó vacía, la borra. Devuelve true si la borró.
+#[tauri::command]
+fn discard_if_blank(id: String) -> Result<bool, String> {
+    let Ok((_, path)) = find_note(&id) else { return Ok(false) };
+    let mut meta = load_meta();
+    if !is_blank(&id, &path, &meta) {
+        return Ok(false);
+    }
+    remove_blank(&id, &path, &mut meta);
+    save_meta(&meta)?;
+    Ok(true)
+}
+
+/// Al abrir la app: borra todas las notas vacías que hayan quedado de antes.
+#[tauri::command]
+fn discard_blank_notes() -> Result<usize, String> {
+    let dir = notes_dir()?;
+    let mut meta = load_meta();
+    let mut n = 0;
+    for folder in folder_names()? {
+        let Ok(entries) = fs::read_dir(dir.join(&folder)) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let id = path.file_stem().unwrap().to_string_lossy().to_string();
+            if is_blank(&id, &path, &meta) {
+                remove_blank(&id, &path, &mut meta);
+                n += 1;
+            }
+        }
+    }
+    if n > 0 {
+        save_meta(&meta)?;
+    }
+    Ok(n)
 }
 
 /// Mueve una nota. `manual = true` significa que la movió el usuario: la IA ya no la vuelve a mover.
@@ -713,17 +940,7 @@ async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
     // 3) Encenderlo y esperar a que responda
     emit("start", None);
     if !ollama_running().await {
-        let dir = windows_ollama_dir().ok_or("No encontré dónde se instaló Ollama")?;
-        let app_exe = dir.join("ollama app.exe");
-        let mut cmd = if app_exe.exists() {
-            std::process::Command::new(app_exe)
-        } else {
-            let mut c = std::process::Command::new(dir.join("ollama.exe"));
-            c.arg("serve");
-            c
-        };
-        hide_window(&mut cmd);
-        cmd.spawn().map_err(|e| format!("No pude encender Ollama: {e}"))?;
+        spawn_ollama()?;
     }
     for _ in 0..60 {
         if ollama_running().await {
@@ -733,6 +950,120 @@ async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
     Err("Ollama se instaló, pero no respondió. Ábrelo desde el menú Inicio y dale \"Revisar\".".into())
+}
+
+// ----- Encender y apagar la IA desde TaskAI -----
+
+/// Arranca Ollama sin ventanas de consola (no espera a que responda).
+fn spawn_ollama() -> Result<(), String> {
+    use std::process::{Command, Stdio};
+    let mut cmd = if cfg!(windows) {
+        // Solo el servidor, invisible. (La "ollama app.exe" de la bandeja abre su propia ventana.)
+        let dir = windows_ollama_dir().ok_or("No encontré dónde está instalado Ollama")?;
+        let mut c = Command::new(dir.join("ollama.exe"));
+        c.arg("serve");
+        c
+    } else if cfg!(target_os = "macos") {
+        let mut c = Command::new("open");
+        c.args(["-a", "Ollama"]);
+        c
+    } else {
+        let mut c = Command::new("ollama");
+        c.arg("serve");
+        c
+    };
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    hide_window(&mut cmd);
+    cmd.spawn().map(|_| ()).map_err(|e| format!("No pude encender Ollama: {e}"))
+}
+
+/// Descarga de la memoria (VRAM/RAM) los modelos que tenga cargados Ollama.
+async fn unload_models() {
+    #[derive(Deserialize)]
+    struct Ps {
+        #[serde(default)]
+        models: Vec<OllamaModel>,
+    }
+    let client = reqwest::Client::new();
+    let Ok(res) = client.get(format!("{OLLAMA_URL}/api/ps")).timeout(std::time::Duration::from_secs(2)).send().await else {
+        return;
+    };
+    let Ok(ps) = res.json::<Ps>().await else { return };
+    for m in ps.models {
+        let _ = client
+            .post(format!("{OLLAMA_URL}/api/generate"))
+            .json(&serde_json::json!({ "model": m.name, "keep_alive": 0 }))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await;
+    }
+}
+
+/// Cierra los procesos de Ollama. En Linux, si corre como servicio de systemd, no se puede sin sudo.
+fn kill_ollama() -> Result<(), String> {
+    use std::process::{Command, Stdio};
+    let run = |prog: &str, args: &[&str]| {
+        let mut c = Command::new(prog);
+        c.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        hide_window(&mut c);
+        c.status().map(|s| s.success()).unwrap_or(false)
+    };
+    if cfg!(windows) {
+        run("taskkill", &["/F", "/IM", "ollama app.exe"]);
+        run("taskkill", &["/F", "/IM", "ollama.exe"]);
+    } else if cfg!(target_os = "macos") {
+        run("osascript", &["-e", "quit app \"Ollama\""]);
+        run("pkill", &["-x", "ollama"]);
+    } else {
+        if run("systemctl", &["is-active", "--quiet", "ollama"]) {
+            return Err("En Linux, Ollama corre como servicio. Apágalo con: sudo systemctl stop ollama".into());
+        }
+        run("pkill", &["-x", "ollama"]);
+    }
+    Ok(())
+}
+
+/// Enciende Ollama y espera (hasta 30 s) a que responda.
+#[tauri::command]
+async fn ollama_start() -> Result<(), String> {
+    if ollama_running().await {
+        return Ok(());
+    }
+    if !ollama_binary_exists() {
+        return Err("NOT_INSTALLED".into());
+    }
+    spawn_ollama()?;
+    for _ in 0..60 {
+        if ollama_running().await {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    Err("Ollama no respondió. Ábrelo desde el menú Inicio.".into())
+}
+
+/// Apaga Ollama: primero libera la memoria del modelo y luego cierra sus procesos.
+#[tauri::command]
+async fn ollama_stop() -> Result<(), String> {
+    unload_models().await;
+    kill_ollama()?;
+    for _ in 0..20 {
+        if !ollama_running().await {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    Err("Ollama sigue encendido. Ciérralo desde su ícono junto al reloj.".into())
+}
+
+/// Preferencias de encendido: guardadas en config.json porque Rust las necesita al cerrar la app.
+#[tauri::command]
+fn set_ai_power(start_on_open: bool, stop_on_exit: bool) -> Result<(), String> {
+    let mut cfg = load_config();
+    cfg.start_ai_on_open = start_on_open;
+    cfg.stop_ai_on_exit = stop_on_exit;
+    let s = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
+    fs::write(config_path()?, s).map_err(|e| e.to_string())
 }
 
 
@@ -790,16 +1121,42 @@ struct ChatMessage {
     content: String,
 }
 
+/// Un pedazo de la respuesta de Ollama mientras se va escribiendo (streaming).
+#[derive(Deserialize)]
+struct ChatChunk {
+    #[serde(default)]
+    message: Option<ChatMessage>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+struct AiStream {
+    id: String,
+    text: String,
+}
+
+/// Ordena la nota. Va mandando a la interfaz el texto conforme la IA lo escribe ("ai-stream"),
+/// para que se vea en vivo; al final devuelve la respuesta completa.
 #[tauri::command]
-async fn ai_structure(text: String, model: String, today: String, tomorrow: String, calendar: String) -> Result<String, String> {
+async fn ai_structure(
+    app: tauri::AppHandle,
+    id: String,
+    text: String,
+    model: String,
+    today: String,
+    tomorrow: String,
+    calendar: String,
+) -> Result<String, String> {
+    use tauri::Emitter;
     let system = SYSTEM_PROMPT.replace("{HOY}", &today).replace("{CALENDARIO}", &calendar);
     let example_out = EXAMPLE_OUT.replace("{MANANA}", &tomorrow);
     let client = reqwest::Client::new();
-    let res = client
+    let mut res = client
         .post(format!("{OLLAMA_URL}/api/chat"))
         .json(&serde_json::json!({
             "model": model,
-            "stream": false,
+            "stream": true,
             "messages": [
                 { "role": "system", "content": system },
                 { "role": "user", "content": EXAMPLE_IN },
@@ -821,10 +1178,50 @@ async fn ai_structure(text: String, model: String, today: String, tomorrow: Stri
         let body = res.text().await.unwrap_or_default();
         return Err(format!("Ollama respondió {status}: {body}"));
     }
-    let body: ChatResponse = res.json().await.map_err(|e| e.to_string())?;
-    let out = body.message.content.trim();
+    // Llega una línea JSON por cada pedacito. Se junta en bytes y se corta por "\n"
+    // para no partir a la mitad letras como "ñ" o "á".
+    let mut buf: Vec<u8> = Vec::new();
+    let mut full = String::new();
+    while let Some(chunk) = res.chunk().await.map_err(|e| e.to_string())? {
+        buf.extend_from_slice(&chunk);
+        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = buf.drain(..=pos).collect();
+            let Ok(part) = serde_json::from_slice::<ChatChunk>(&line) else { continue };
+            if let Some(e) = part.error {
+                return Err(format!("Ollama: {e}"));
+            }
+            if let Some(m) = part.message {
+                full.push_str(&m.content);
+                let _ = app.emit("ai-stream", AiStream { id: id.clone(), text: full.clone() });
+            }
+        }
+    }
+    let out = full.trim();
     let out = out.strip_prefix("```markdown").or_else(|| out.strip_prefix("```md")).unwrap_or(out);
     Ok(out.trim_matches('`').trim().to_string())
+}
+
+/// Las versiones ordenadas de todas las notas (para juntar los pendientes en una sola vista).
+#[tauri::command]
+fn all_structured() -> Result<HashMap<String, String>, String> {
+    let dir = notes_dir()?;
+    let mut out = HashMap::new();
+    for folder in folder_names()? {
+        let Ok(entries) = fs::read_dir(dir.join(&folder)) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let id = path.file_stem().unwrap().to_string_lossy().to_string();
+            if let Ok(s) = fs::read_to_string(structured_path(&id)?) {
+                if s.contains("- [") {
+                    out.insert(id, s);
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Pistas para que la IA entienda cada carpeta de fábrica.
@@ -897,13 +1294,21 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             list_notes,
             read_note,
             save_note,
             save_structured,
+            all_structured,
             create_note,
             delete_note,
+            list_trash,
+            restore_note,
+            purge_note,
+            empty_trash,
+            discard_if_blank,
+            discard_blank_notes,
             set_title,
             save_image,
             load_image,
@@ -921,8 +1326,20 @@ pub fn run() {
             system_info,
             ai_models,
             ai_pull,
-            ai_structure
+            ai_structure,
+            ollama_start,
+            ollama_stop,
+            set_ai_power
         ])
-        .run(tauri::generate_context!())
-        .expect("error al iniciar TaskAI");
+        .build(tauri::generate_context!())
+        .expect("error al iniciar TaskAI")
+        .run(|_app, event| {
+            // Al cerrar TaskAI: apagar Ollama (si el usuario lo dejó activado) para liberar la tarjeta de video
+            if let tauri::RunEvent::Exit = event {
+                if load_config().stop_ai_on_exit {
+                    tauri::async_runtime::block_on(unload_models());
+                    let _ = kill_ollama();
+                }
+            }
+        });
 }

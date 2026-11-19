@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { Logo } from "./icons";
 import { Cmd, OS_LABEL, RECOMMENDED, Steps, type OsKey, type SystemInfo } from "./Settings";
 
 type ThemePref = "system" | "light" | "dark";
@@ -144,7 +145,9 @@ export default function Onboarding({
 
         {step === 0 && (
           <section>
-            <div className="logo big">✦</div>
+            <div className="logo-big">
+              <Logo height={40} />
+            </div>
             <h1>Bienvenido a TaskAI</h1>
             <p className="muted">Escribe como piensas; la IA lo ordena. Antes de empezar, ¿cómo te llamas?</p>
             <input
@@ -363,7 +366,9 @@ export default function Onboarding({
 
         {step === 5 && (
           <section>
-            <div className="logo big">✦</div>
+            <div className="logo-big">
+              <Logo height={40} />
+            </div>
             <h1>¡Todo listo, {name.trim()}!</h1>
             <ul className="summary">
               <li>
