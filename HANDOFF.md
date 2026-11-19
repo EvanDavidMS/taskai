@@ -166,6 +166,12 @@ Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
 7. ~~Favoritas y arrastrar~~ ✅ `favorite` en meta.json + `set_favorite`; arrastrar tarjeta a carpeta del menú (`dragDropEnabled: false` en tauri.conf, si no, el webview bloquea el drag HTML5). **Falta que Evan pruebe el arrastre en la app real.**
 8. ~~Capturas y GIF~~ ✅ `docs/capturas/` (notas de ejemplo de "Ana", nunca las de Evan). Se generaron con `__preview` + Edge headless (`--force-device-scale-factor=1.5`) y el GIF con ffmpeg (concat + palettegen).
 
+**⚠ URGENTE: Windows Defender borra TaskAI (falso positivo)**
+- 19 nov: Defender detectó `taskai.exe` 1.3.0 y 1.4.0 como **`Trojan:Win32/Bearfoos.A!ml`** (heurística de machine learning) y lo eliminó (exe, accesos directos y registro). Las notas no se tocan.
+- Evan debe: permitirlo en Historial de protección y **reportar falso positivo** en <https://www.microsoft.com/en-us/wdsi/filesubmission> (subir el setup.exe).
+- En código, quitar lo que parece malware: borrar `Startup\Ollama.lnk` (`remove_ollama_autostart`), `taskkill /F` y `tasklist` (cerrar Ollama de forma normal o por API), y revisar la descarga + instalación silenciosa de Ollama.
+- A largo plazo: firma de código gratis para open source con **SignPath Foundation** (requiere compilar en GitHub Actions; preguntarle a Evan).
+
 **Pendiente (siguiente sesión)**
 9. Instaladores de **Linux** (`.deb`/AppImage, compilar en la laptop EndeavourOS) y **macOS** (solo en una Mac o con Actions; Evan no quiere Actions → preguntarle).
 10. Plantilla propia para **Diario** (ej. "Cómo me sentí", "Lo mejor del día").
