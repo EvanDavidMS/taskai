@@ -163,7 +163,14 @@ En `Documentos\TaskAI` (o la carpeta que elegiste; la ves en **Configuración �
 <details>
 <summary><b>¿Cómo lo desinstalo?</b></summary>
 
-Configuración de Windows → Aplicaciones → TaskAI → Desinstalar. Tus notas **no** se borran: siguen en `Documentos\TaskAI`. Ollama se desinstala aparte, igual que cualquier programa.
+Configuración de Windows → Aplicaciones → TaskAI → Desinstalar. El desinstalador te pregunta:
+
+1. **¿Quitar también la IA?** Desinstala Ollama y borra los modelos descargados (varios GB). Di que no si usas Ollama con otros programas.
+2. **¿Borrar también tus notas?** Si dices que no, se quedan en `Documentos\TaskAI`.
+
+Si marcas **borrar los datos de la app**, también se borra tu configuración. Así no queda nada en tu computadora.
+
+Para liberar espacio sin desinstalar, puedes borrar los modelos que no uses en **Configuración → Inteligencia artificial** (botón de basura junto a cada modelo).
 </details>
 
 ---
