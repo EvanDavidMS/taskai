@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
+import { ACCENTS } from "./accents";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -130,6 +132,8 @@ export default function Settings({
   folder,
   theme,
   setTheme,
+  accent,
+  setAccent,
 }: {
   onClose: () => void;
   models: string[];
@@ -140,6 +144,8 @@ export default function Settings({
   folder: string;
   theme: "system" | "light" | "dark";
   setTheme: (t: "system" | "light" | "dark") => void;
+  accent: string;
+  setAccent: (id: string) => void;
 }) {
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [tab, setTab] = useState<OsKey | null>(null);
@@ -341,6 +347,32 @@ export default function Settings({
               ))}
             </div>
             <p className="muted small">"Sistema" sigue el modo claro u oscuro de tu computadora.</p>
+
+            <h3 style={{ marginTop: 20 }}>
+              Color principal:{" "}
+              <span style={{ color: "var(--accent)" }}>{ACCENTS.find((a) => a.id === accent)?.name ?? "Naranja"}</span>
+            </h3>
+            <div className="swatches" role="radiogroup" aria-label="Color principal">
+              {ACCENTS.map((a) => (
+                <button
+                  key={a.id}
+                  role="radio"
+                  aria-checked={accent === a.id}
+                  aria-label={a.name}
+                  title={a.name}
+                  className={`swatch ${accent === a.id ? "on" : ""}`}
+                  style={
+                    {
+                      "--sw": a.dark,
+                      "--sw-l": a.light,
+                      "--sw-on": a.onDark ?? "255 255 255",
+                      "--sw-on-l": a.onLight ?? "255 255 255",
+                    } as CSSProperties
+                  }
+                  onClick={() => setAccent(a.id)}
+                />
+              ))}
+            </div>
           </section>
 
           {/* ---------- Notas ---------- */}

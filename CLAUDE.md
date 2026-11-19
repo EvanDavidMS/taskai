@@ -38,8 +38,12 @@ Documentos/TaskAI/            (dirs::document_dir: ~/Documentos en Linux españo
 │   └── nota-<ms>.md          ← texto crudo del usuario (la IA nunca lo modifica)
 └── .taskai/
     ├── nota-<ms>.md          ← versión ordenada por la IA (con palomitas [x])
-    └── meta.json             ← { id: { locked, pinned } }
+    ├── img/<ms>.png          ← imágenes pegadas con Ctrl + V (en el texto: `![imagen](img/<ms>.png)`)
+    └── meta.json             ← { id: { locked, pinned, title } }
 ```
+
+- `title`: título opcional que escribió el usuario. Manda sobre el título de la IA y se le pasa a `ai_classify` como pista ("Título: …").
+- Las imágenes **no** se mandan a la IA (`stripImages`); se ven como miniaturas bajo el editor y la versión ordenada. Al borrar una nota se borran sus imágenes.
 
 - `locked`: el usuario movió la nota a mano → la IA ya no la cambia de carpeta.
 - `pinned`: versión ordenada fijada → la IA ya no la reescribe sola (solo con "Revisar").

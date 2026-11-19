@@ -2,7 +2,7 @@
 
 > Para la próxima sesión de Claude Code: lee esto completo y luego [`CLAUDE.md`](CLAUDE.md).
 > Última actualización: 18 de noviembre de 2026, desde la laptop de Evan (EndeavourOS/Arch, RTX 5060).
-> **La compu nueva es Windows** (RTX 3060 Ti 8 GB, 16 GB RAM).
+> **La compu nueva es Windows** (RTX 3060 12 GB, 16 GB RAM).
 
 ## 1. Dónde vamos
 
@@ -22,7 +22,7 @@ TaskAI ya funciona de punta a punta:
 
 ## 2. Qué instalar en la compu nueva
 
-El hardware sirve de sobra: una **RTX 3060 Ti (8 GB)** carga `qwen2.5:7b` (4.7 GB) completo en la GPU.
+El hardware sirve de sobra: una **RTX 3060 (12 GB)** carga `qwen2.5:7b` (4.7 GB) completo en la GPU.
 
 ### Windows 10/11 (la compu de escritorio de Evan)
 

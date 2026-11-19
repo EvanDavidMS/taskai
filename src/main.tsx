@@ -1,6 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "@fontsource-variable/inter"; // Inter incluida en la app: Windows no la trae
 import App from "./App";
+import { applyAccent, savedAccent } from "./accents";
+
+applyAccent(savedAccent()); // el color principal, también antes del primer pintado
 
 // Aplica el tema ANTES del primer pintado, para que no haya destello oscuro en modo claro.
 (() => {

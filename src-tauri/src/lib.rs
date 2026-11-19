@@ -173,6 +173,9 @@ struct NoteInfo {
     /// Versión ordenada fijada: la IA ya no la reescribe sola.
     #[serde(default)]
     pinned: bool,
+    /// Título que el usuario escribió a propósito (opcional). Manda sobre el de la IA.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    title: String,
 }
 
 fn meta_path() -> Result<PathBuf, String> {
@@ -208,11 +211,19 @@ struct NoteMeta {
 struct Note {
     content: String,
     structured: String,
+    title: String,
+}
+
+/// Las imágenes pegadas quedan en el texto como `![imagen](img/<nombre>)`: no cuentan como texto.
+fn is_image_line(l: &str) -> bool {
+    let l = l.trim();
+    l.starts_with("![") && l.ends_with(')')
 }
 
 fn title_of(content: &str) -> String {
     content
         .lines()
+        .filter(|l| !is_image_line(l))
         .map(|l| l.trim_start_matches('#').trim())
         .find(|l| !l.is_empty())
         .unwrap_or("Nota sin título")
@@ -253,16 +264,19 @@ fn list_notes() -> Result<Vec<NoteMeta>, String> {
                 .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            // Si la IA ya puso título ("# ..."), usamos ese; el texto crudo queda como vista previa.
-            let ai_title = structured_path(&id)
-                .ok()
-                .and_then(|p| fs::read_to_string(p).ok())
-                .and_then(|s| s.lines().find(|l| l.starts_with("# ")).map(|l| l[2..].trim().to_string()))
-                .filter(|t| !t.is_empty());
+            // Título: el que puso el usuario > el de la IA ("# ...") > la primera línea.
+            let user_title = meta.get(&id).map(|m| m.title.clone()).filter(|t| !t.is_empty());
+            let ai_title = user_title.or_else(|| {
+                structured_path(&id)
+                    .ok()
+                    .and_then(|p| fs::read_to_string(p).ok())
+                    .and_then(|s| s.lines().find(|l| l.starts_with("# ")).map(|l| l[2..].trim().to_string()))
+                    .filter(|t| !t.is_empty())
+            });
             let preview: String = content
                 .lines()
                 .map(str::trim)
-                .filter(|l| !l.is_empty())
+                .filter(|l| !l.is_empty() && !is_image_line(l))
                 .skip(if ai_title.is_some() { 0 } else { 1 })
                 .collect::<Vec<_>>()
                 .join(" ")
@@ -291,7 +305,82 @@ fn read_note(id: String) -> Result<Note, String> {
     Ok(Note {
         content: fs::read_to_string(path).unwrap_or_default(),
         structured: fs::read_to_string(structured_path(&id)?).unwrap_or_default(),
+        title: load_meta().get(&id).map(|m| m.title.clone()).unwrap_or_default(),
     })
+}
+
+/// Guarda el título opcional que escribió el usuario (vacío = sin título propio).
+#[tauri::command]
+fn set_title(id: String, title: String) -> Result<(), String> {
+    safe_id(&id)?;
+    let title: String = title.trim().chars().take(80).collect();
+    let mut meta = load_meta();
+    if meta.get(&id).map(|m| m.title == title).unwrap_or(title.is_empty()) {
+        return Ok(()); // sin cambios: no reescribimos meta.json
+    }
+    meta.entry(id).or_default().title = title;
+    save_meta(&meta)
+}
+
+// ----- Imágenes pegadas (Ctrl + V) -----
+
+fn images_dir() -> Result<PathBuf, String> {
+    Ok(notes_dir()?.join(".taskai").join("img"))
+}
+
+/// Solo nombres que generamos nosotros: `1763532000000.png`.
+fn safe_image(name: &str) -> Result<&str, String> {
+    let ok = !name.is_empty()
+        && !name.starts_with('.')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+        && !name.contains("..");
+    if ok { Ok(name) } else { Err("Nombre de imagen inválido".into()) }
+}
+
+/// Recibe los bytes crudos de la imagen (sin pasarlos por JSON) y devuelve su nombre.
+#[tauri::command]
+fn save_image(request: tauri::ipc::Request) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("No llegó la imagen".into());
+    };
+    if bytes.is_empty() || bytes.len() > 25 * 1024 * 1024 {
+        return Err("La imagen está vacía o pesa más de 25 MB".into());
+    }
+    let ext = request.headers().get("x-ext").and_then(|v| v.to_str().ok()).unwrap_or("png");
+    let ext = match ext {
+        "png" | "jpg" | "gif" | "webp" | "bmp" => ext,
+        _ => "png",
+    };
+    let dir = images_dir()?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut ms = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    while dir.join(format!("{ms}.{ext}")).exists() {
+        ms += 1;
+    }
+    let name = format!("{ms}.{ext}");
+    fs::write(dir.join(&name), bytes).map_err(|e| e.to_string())?;
+    Ok(name)
+}
+
+/// Devuelve los bytes de una imagen tal cual (llegan como ArrayBuffer a la interfaz).
+#[tauri::command]
+fn load_image(name: String) -> Result<tauri::ipc::Response, String> {
+    let bytes = fs::read(images_dir()?.join(safe_image(&name)?)).map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Nombres de las imágenes que aparecen en el texto de una nota.
+fn images_in(content: &str) -> Vec<String> {
+    content
+        .split("](img/")
+        .skip(1)
+        .filter_map(|rest| rest.split(')').next())
+        .filter(|n| safe_image(n).is_ok())
+        .map(String::from)
+        .collect()
 }
 
 #[tauri::command]
@@ -333,6 +422,12 @@ fn delete_note(id: String) -> Result<(), String> {
         save_meta(&meta)?;
     }
     let (_, path) = find_note(&id)?;
+    // También sus imágenes pegadas
+    if let (Ok(content), Ok(dir)) = (fs::read_to_string(&path), images_dir()) {
+        for name in images_in(&content) {
+            let _ = fs::remove_file(dir.join(name));
+        }
+    }
     fs::remove_file(path).map_err(|e| e.to_string())
 }
 
@@ -713,7 +808,9 @@ async fn ai_structure(text: String, model: String, today: String, tomorrow: Stri
                 { "role": "assistant", "content": EXAMPLE2_OUT.replace("{MANANA}", &tomorrow) },
                 { "role": "user", "content": text }
             ],
-            // temperatura 0 + semilla fija = misma nota, mismo resultado
+            // temperatura 0 + semilla fija = misma nota, mismo resultado.
+            // num_ctx debe ser igual en ai_classify: si cambia, Ollama recarga el modelo.
+            "keep_alive": "30m",
             "options": { "temperature": 0, "seed": 42, "top_k": 1, "num_ctx": 8192 }
         }))
         .send()
@@ -761,6 +858,7 @@ async fn ai_classify(text: String, model: String) -> Result<String, String> {
         .join("\n");
     let system = format!(
         "Clasificas apuntes en carpetas. Elige UNA carpeta de esta lista según el tema principal:\n{list}\n\n\
+         Si la nota empieza con \"Título:\", ese título lo puso el usuario: es la mejor pista del tema.\n\
          Si la nota mezcla temas, elige la carpeta de la MAYORÍA de las cosas o de la más importante. Usa \"{INBOX}\" solo para recordatorios sueltos que no encajan en ninguna otra.\n\
          Responde solo con JSON: {{\"folder\": \"<nombre exacto>\"}}"
     );
@@ -779,7 +877,9 @@ async fn ai_classify(text: String, model: String) -> Result<String, String> {
                 "properties": { "folder": { "type": "string", "enum": folders } },
                 "required": ["folder"]
             },
-            "options": { "temperature": 0, "seed": 42, "top_k": 1 }
+            // mismo num_ctx que ai_structure para no recargar el modelo entre llamadas
+            "keep_alive": "30m",
+            "options": { "temperature": 0, "seed": 42, "top_k": 1, "num_ctx": 8192 }
         }))
         .send()
         .await
@@ -804,6 +904,9 @@ pub fn run() {
             save_structured,
             create_note,
             delete_note,
+            set_title,
+            save_image,
+            load_image,
             notes_folder,
             get_config,
             save_config,

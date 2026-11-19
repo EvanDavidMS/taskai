@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ClipboardEvent as ReactClipboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import Settings from "./Settings";
 import Onboarding from "./Onboarding";
+import { applyAccent, savedAccent } from "./accents";
 import "./App.css";
 
 type NoteMeta = {
@@ -16,7 +18,70 @@ type NoteMeta = {
   locked: boolean;
   pinned: boolean;
 };
-type Note = { content: string; structured: string };
+type Note = { content: string; structured: string; title: string };
+
+// Imágenes pegadas con Ctrl + V: en el texto quedan como ![imagen](img/<nombre>)
+const IMG_RE = /!\[[^\]]*\]\(img\/([\w.-]+)\)/g;
+const imagesIn = (s: string) => [...s.matchAll(IMG_RE)].map((m) => m[1]);
+/** Lo que se le manda a la IA: el texto sin las referencias a imágenes. */
+const stripImages = (s: string) => s.replace(IMG_RE, "").replace(/\n{3,}/g, "\n\n").trim();
+/** Clave para saber si algo cambió desde la última vez que ordenó la IA. */
+const aiKeyOf = (title: string, text: string) => title.trim() + "\u0000" + text;
+
+const imageCache = new Map<string, string>(); // nombre → URL blob, para no leer el disco dos veces
+function useImageUrls(names: string[]) {
+  const [, force] = useState(0);
+  const key = names.join("|");
+  useEffect(() => {
+    let alive = true;
+    for (const n of names) {
+      if (imageCache.has(n)) continue;
+      invoke<ArrayBuffer>("load_image", { name: n })
+        .then((buf) => {
+          imageCache.set(n, URL.createObjectURL(new Blob([buf])));
+          if (alive) force((x) => x + 1);
+        })
+        .catch(() => {});
+    }
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return names.map((n) => ({ name: n, url: imageCache.get(n) }));
+}
+
+/** Miniaturas de las imágenes de la nota. Con `onRemove`, cada una trae su botón para quitarla. */
+function NoteImages({ names, onRemove }: { names: string[]; onRemove?: (name: string) => void }) {
+  const imgs = useImageUrls(names);
+  const [big, setBig] = useState<string | null>(null);
+  if (!names.length) return null;
+  return (
+    <>
+      <div className={`note-imgs ${onRemove ? "editable" : ""}`}>
+        {imgs.map(({ name, url }) => (
+          <div key={name} className="note-img">
+            {url ? (
+              <img src={url} alt="Imagen pegada" onClick={() => setBig(url)} />
+            ) : (
+              <div className="note-img-loading" />
+            )}
+            {onRemove && (
+              <button className="note-img-del" title="Quitar imagen" aria-label="Quitar imagen" onClick={() => onRemove(name)}>
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {big && (
+        <div className="modal-wrap lightbox" onClick={() => setBig(null)}>
+          <img src={big} alt="Imagen pegada" />
+        </div>
+      )}
+    </>
+  );
+}
 type FolderInfo = { name: string; count: number; builtin: boolean };
 type Toast = { text: string; undo?: () => void };
 type ThemePref = "system" | "light" | "dark";
@@ -156,6 +221,42 @@ function timeAgo(secs: number) {
   return new Date(secs * 1000).toLocaleDateString("es-MX", { day: "numeric", month: "short" });
 }
 
+/** "¿Estás seguro?" propio. El foco empieza en Cancelar para que un Enter por accidente no borre nada. */
+function ConfirmDialog(props: { title: string; text: string; ok: string; run: () => void; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [props]);
+  return (
+    <div className="modal-wrap" onMouseDown={(e) => e.target === e.currentTarget && props.onClose()}>
+      <div className="confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div className="confirm-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6" />
+          </svg>
+        </div>
+        <h2 id="confirm-title">{props.title}</h2>
+        <p>{props.text}</p>
+        <div className="confirm-actions">
+          <button className="btn ghost" autoFocus onClick={props.onClose}>
+            Cancelar
+          </button>
+          <button
+            className="btn danger"
+            onClick={() => {
+              props.run();
+              props.onClose();
+            }}
+          >
+            {props.ok}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -176,7 +277,27 @@ export default function App() {
   const [newFolder, setNewFolder] = useState<string | null>(null); // input de nueva carpeta
   const [moveOpen, setMoveOpen] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [accent, setAccent] = useState(savedAccent); // color principal (Configuración → Apariencia)
+  const [title, setTitle] = useState(""); // título opcional que escribe el usuario
+  // Modo lectura: esconde el editor y deja solo la versión ordenada (se recuerda entre sesiones)
+  const [reading, setReading] = useState(() => {
+    try {
+      return localStorage.getItem("taskai.read") === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("taskai.read", reading ? "1" : "0");
+    } catch {
+      /* sin almacenamiento */
+    }
+  }, [reading]);
+  const titleRef = useRef("");
+  titleRef.current = title;
+  // Diálogo "¿Seguro?" propio (en vez del confirm() nativo)
+  const [ask, setAsk] = useState<{ title: string; text: string; ok: string; run: () => void } | null>(null);
   const [onboarded, setOnboarded] = useState<boolean | null>(null); // null = cargando
   const [userName, setUserName] = useState("");
   const [libHidden, setLibHidden] = useState(() => {
@@ -297,8 +418,9 @@ export default function App() {
     setListOpen(false);
     setView("raw");
     setContent(n.content);
+    setTitle(n.title);
     setStructured(n.structured);
-    lastSent.current = n.structured ? n.content : "";
+    lastSent.current = n.structured ? aiKeyOf(n.title, stripImages(n.content)) : "";
     setAi(models.length ? (n.structured ? "done" : "idle") : "off");
   }
 
@@ -308,13 +430,22 @@ export default function App() {
     await openNote(id);
   }
 
-  async function removeNote() {
-    if (!activeId || !confirm("¿Borrar esta nota? No se puede deshacer.")) return;
-    await invoke("delete_note", { id: activeId });
-    setActiveId(null);
-    setContent("");
-    setStructured("");
-    refresh();
+  function askRemoveNote(id: string, title: string) {
+    setAsk({
+      title: "¿Borrar esta nota?",
+      text: `“${title}” se borrará para siempre, junto con su versión ordenada. No se puede deshacer.`,
+      ok: "Sí, borrar",
+      run: async () => {
+        await invoke("delete_note", { id });
+        if (id === activeId) {
+          setActiveId(null);
+          setContent("");
+          setTitle("");
+          setStructured("");
+        }
+        refresh();
+      },
+    });
   }
 
   // Guardado automático
@@ -322,24 +453,61 @@ export default function App() {
     if (!activeId) return;
     const t = setTimeout(async () => {
       await invoke("save_note", { id: activeId, content });
+      await invoke("set_title", { id: activeId, title });
       refresh();
     }, SAVE_DELAY_MS);
     return () => clearTimeout(t);
-  }, [content, activeId, refresh]);
+  }, [content, title, activeId, refresh]);
+
+  // Ctrl + V con una imagen: se guarda aparte y en el texto queda su referencia en una línea propia.
+  async function onPaste(e: ReactClipboardEvent<HTMLTextAreaElement>) {
+    const file = [...e.clipboardData.items].find((i) => i.type.startsWith("image/"))?.getAsFile();
+    if (!file) return; // texto normal: que el navegador lo pegue
+    e.preventDefault();
+    const ta = e.currentTarget;
+    const before = ta.value.slice(0, ta.selectionStart);
+    const after = ta.value.slice(ta.selectionEnd);
+    try {
+      const ext = (file.type.split("/")[1] || "png").replace("jpeg", "jpg");
+      const name = await invoke<string>("save_image", new Uint8Array(await file.arrayBuffer()), {
+        headers: { "x-ext": ext },
+      });
+      const token = `${before && !before.endsWith("\n") ? "\n" : ""}![imagen](img/${name})${after.startsWith("\n") ? "" : "\n"}`;
+      setContent(before + token + after);
+      const caret = before.length + token.length;
+      requestAnimationFrame(() => ta.setSelectionRange(caret, caret));
+    } catch (err) {
+      setToast({ text: `No se pudo pegar la imagen: ${err}` });
+    }
+  }
+
+  function removeImage(name: string) {
+    setContent((c) =>
+      c
+        .split("\n")
+        .filter((l) => !l.includes(`](img/${name})`))
+        .join("\n"),
+    );
+  }
 
   const runAi = useCallback(
     async (text: string, id: string) => {
       if (!model) return;
       setAi("working");
       setAiError("");
+      const userTitle = titleRef.current.trim();
       try {
         const ann = annotateDates(text);
-        const fresh = normalizeTimes(
+        let fresh = normalizeTimes(
           stripNotes(await invoke<string>("ai_structure", { text: ann.text, model, ...dateContext() }), ann.notes),
         );
+        // Si el usuario puso título, ese manda sobre el que inventó la IA.
+        if (userTitle) {
+          fresh = /^# .*/m.test(fresh) ? fresh.replace(/^# .*/m, `# ${userTitle}`) : `# ${userTitle}\n\n${fresh}`;
+        }
         const out = activeRef.current === id ? carryChecks(structuredRef.current, fresh) : fresh;
         await invoke("save_structured", { id, content: out });
-        lastSent.current = text;
+        lastSent.current = aiKeyOf(userTitle, text);
         if (activeRef.current === id) {
           setStructured(out);
           setAi("done");
@@ -348,7 +516,10 @@ export default function App() {
         // La IA decide la carpeta, salvo que el usuario ya la haya movido a mano
         const meta = notesRef.current.find((n) => n.id === id);
         if (meta && !meta.locked) {
-          const to = await invoke<string>("ai_classify", { text, model });
+          const to = await invoke<string>("ai_classify", {
+            text: userTitle ? `Título: ${userTitle}\n\n${text}` : text,
+            model,
+          });
           if (to !== meta.folder) {
             const from = meta.folder;
             await moveTo(id, to, false);
@@ -374,17 +545,20 @@ export default function App() {
 
   const active = notes.find((n) => n.id === activeId);
   const pinned = !!active?.pinned;
+  const aiText = useMemo(() => stripImages(content), [content]);
+  const aiKey = aiKeyOf(title, aiText);
+  const images = useMemo(() => imagesIn(content), [content]);
 
   // La IA ordena cuando dejas de escribir (salvo que hayas fijado la versión ordenada)
   useEffect(() => {
     if (!activeId || !model || pinned || ai === "working" || ai === "off") return;
-    if (content.trim().length < MIN_CHARS || content === lastSent.current) return;
+    if (aiText.length < MIN_CHARS || aiKey === lastSent.current) return;
     setAi("waiting");
     const id = activeId;
-    const t = setTimeout(() => runAi(content, id), AI_DELAY_MS);
+    const t = setTimeout(() => runAi(aiText, id), AI_DELAY_MS);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, activeId, model, pinned, ai === "working", ai === "off"]);
+  }, [aiKey, activeId, model, pinned, ai === "working", ai === "off"]);
 
   const html = useMemo(
     () =>
@@ -447,6 +621,11 @@ export default function App() {
 
   const words = content.trim() ? content.trim().split(/\s+/).length : 0;
 
+  // Línea donde está el cursor (para resaltar su número).
+  const [caretLine, setCaretLine] = useState(0);
+  const trackCaret = (el: HTMLTextAreaElement) =>
+    setCaretLine(el.value.slice(0, el.selectionStart).split("\n").length - 1);
+
   const status: Record<AiState, { label: string; cls: string }> = {
     idle: { label: "Lista para ordenar", cls: "" },
     waiting: { label: "Esperando que termines…", cls: "wait" },
@@ -470,8 +649,11 @@ export default function App() {
             <div className="logo">✦</div>
             <span>TaskAI</span>
           </div>
-          <button className="icon-btn" title="Nueva nota" onClick={newNote}>
-            ✎
+          <button className="new-note" onClick={newNote}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+            Nueva nota
           </button>
         </header>
 
@@ -493,7 +675,12 @@ export default function App() {
               onContextMenu={(e) => {
                 if (f.builtin) return;
                 e.preventDefault();
-                if (confirm(`¿Borrar la carpeta "${f.name}"? Solo se puede si está vacía.`)) removeFolder(f.name);
+                setAsk({
+                  title: "¿Borrar esta carpeta?",
+                  text: `Se borrará la carpeta “${f.name}”. Solo se puede si está vacía.`,
+                  ok: "Sí, borrar",
+                  run: () => removeFolder(f.name),
+                });
               }}
             >
               {icon(f.name)} {f.name}
@@ -538,7 +725,31 @@ export default function App() {
         <div className="list-title">{listTitle}</div>
         <div className="items">
           {visible.map((n) => (
-            <button key={n.id} className={`item ${n.id === activeId ? "on" : ""}`} onClick={() => openNote(n.id)}>
+            <div
+              key={n.id}
+              role="button"
+              tabIndex={0}
+              className={`item ${n.id === activeId ? "on" : ""}`}
+              onClick={() => openNote(n.id)}
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") openNote(n.id);
+                if (e.key === "Delete") askRemoveNote(n.id, n.title);
+              }}
+            >
+              <button
+                className="item-del"
+                title="Borrar nota"
+                aria-label={`Borrar nota ${n.title}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  askRemoveNote(n.id, n.title);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6" />
+                </svg>
+              </button>
               <div className="item-title">
                 {n.pinned && <span title="Versión fijada">📌 </span>}
                 {n.title}
@@ -552,7 +763,7 @@ export default function App() {
                 )}
                 {timeAgo(n.modified)}
               </div>
-            </button>
+            </div>
           ))}
           {visible.length === 0 && <p className="hint pad">No hay notas aquí todavía.</p>}
         </div>
@@ -668,46 +879,34 @@ export default function App() {
                   </span>
                 )}
                 <button
+                  className={`btn toggle ${reading ? "on" : ""}`}
+                  onClick={() => setReading((r) => !r)}
+                  aria-pressed={reading}
+                  title={reading ? "Volver a escribir" : "Modo lectura: solo la versión ordenada"}
+                >
+                  {reading ? (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
+                  ) : (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z" />
+                    </svg>
+                  )}
+                  <span className="btn-label">{reading ? "Editar" : "Lectura"}</span>
+                </button>
+                <button
                   className="btn primary"
-                  disabled={!model || ai === "working" || content.trim().length < MIN_CHARS}
-                  onClick={() => activeId && runAi(content, activeId)}
+                  disabled={!model || ai === "working" || aiText.length < MIN_CHARS}
+                  onClick={() => activeId && runAi(aiText, activeId)}
                   title={pinned ? "Revisar: la IA actualiza la versión fijada con tus apuntes" : "Ordenar ahora"}
                 >
                   ✦<span className="btn-label"> {pinned ? "Revisar" : "Ordenar"}</span>
                 </button>
-                <div className="move">
-                  <button className="icon-btn" title="Más opciones" onClick={() => setMoreOpen((o) => !o)}>
-                    ⋯
-                  </button>
-                  {moreOpen && (
-                    <>
-                      <div className="menu-backdrop" onClick={() => setMoreOpen(false)} />
-                      <div className="menu">
-                        <button
-                          onClick={() => {
-                            setMoreOpen(false);
-                            setSettingsOpen(true);
-                          }}
-                        >
-                          ⚙ Configuración
-                        </button>
-                        <button
-                          className="danger-item"
-                          onClick={() => {
-                            setMoreOpen(false);
-                            removeNote();
-                          }}
-                        >
-                          🗑 Borrar nota
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
               </div>
             </header>
 
-            <div className="pane-tabs">
+            <div className="pane-tabs" hidden={reading}>
               <button className={view === "raw" ? "on" : ""} onClick={() => setView("raw")}>
                 Tus apuntes
               </button>
@@ -717,17 +916,52 @@ export default function App() {
               </button>
             </div>
 
-            <div className="split" data-view={view}>
+            <div className={`split ${reading ? "reading" : ""}`} data-view={reading ? "ai" : view}>
               <div className="pane raw-pane">
                 <div className="pane-label">Tus apuntes</div>
-                <textarea
-                  autoFocus
-                  spellCheck={false}
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder={"Escribe sin pensar en el orden…\n\nclase redes hoy, el profe dijo q tcp es confiable y udp no\nexamen el viernes #redes"}
+                <input
+                  className="note-title"
+                  value={title}
+                  maxLength={80}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter salta al texto, como en cualquier editor de notas
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      (e.currentTarget.parentElement?.querySelector("textarea") as HTMLTextAreaElement | null)?.focus();
+                    }
+                  }}
+                  placeholder="Título (opcional)"
+                  aria-label="Título de la nota (opcional)"
                 />
-                <div className="pane-foot">{words} palabras · guardado automático</div>
+                <div className="editor-scroll">
+                  {/* Debajo va una copia invisible del texto, línea por línea, para que cada
+                      número quede a la altura de su línea aunque esta se parta en varios renglones. */}
+                  <div className="editor">
+                    {content.split("\n").map((line, i) => (
+                      <div key={i} className={"ln-row" + (i === caretLine ? " current" : "")}>
+                        <span className="ln-num">{i + 1}</span>
+                        <span className="ln-text">{line || "​"}</span>
+                      </div>
+                    ))}
+                    <textarea
+                      autoFocus
+                      spellCheck={false}
+                      value={content}
+                      onChange={(e) => {
+                        setContent(e.target.value);
+                        trackCaret(e.target);
+                      }}
+                      onSelect={(e) => trackCaret(e.currentTarget)}
+                      onPaste={onPaste}
+                      placeholder={"Escribe aquí lo que quieras, como te salga…\nLa IA lo acomoda por ti en el lado derecho."}
+                    />
+                  </div>
+                </div>
+                <NoteImages names={images} onRemove={removeImage} />
+                <div className="pane-foot">
+                  {words} palabras · guardado automático · pega imágenes con Ctrl + V
+                </div>
               </div>
 
               <div className="pane ai-pane">
@@ -747,10 +981,10 @@ export default function App() {
                     </button>
                   )}
                 </div>
-                {pinned && content !== lastSent.current && ai !== "working" && (
+                {pinned && aiKey !== lastSent.current && ai !== "working" && (
                   <div className="pin-note">
                     Cambiaste tus apuntes. La versión fijada no se actualiza sola:{" "}
-                    <button className="link" onClick={() => activeId && runAi(content, activeId)}>
+                    <button className="link" onClick={() => activeId && runAi(aiText, activeId)}>
                       ✦ Revisar ahora
                     </button>
                   </div>
@@ -769,16 +1003,26 @@ export default function App() {
                     </div>
                   </div>
                 ) : structured ? (
-                  <article
-                    className={`md ${ai === "working" ? "dim" : ""}`}
-                    onClick={onTaskClick}
-                    dangerouslySetInnerHTML={{ __html: html }}
-                  />
+                  <>
+                    <article
+                      className={`md ${ai === "working" ? "dim" : ""}`}
+                      onClick={onTaskClick}
+                      dangerouslySetInnerHTML={{ __html: html }}
+                    />
+                    <NoteImages names={images} />
+                  </>
                 ) : (
                   <div className="empty-ai">
                     {ai === "working" ? (
                       <div className="shimmer">
                         <span /> <span /> <span />
+                      </div>
+                    ) : reading ? (
+                      <div className="reading-empty">
+                        <p>Esta nota todavía no tiene versión ordenada.</p>
+                        <button className="btn" onClick={() => setReading(false)}>
+                          ✎ Ir a escribir
+                        </button>
                       </div>
                     ) : (
                       <p>Escribe al menos unas líneas y deja de teclear un momento. Aquí aparecerá tu nota ordenada.</p>
@@ -808,6 +1052,8 @@ export default function App() {
         </div>
       )}
 
+      {ask && <ConfirmDialog {...ask} onClose={() => setAsk(null)} />}
+
       {settingsOpen && (
         <Settings
           onClose={() => setSettingsOpen(false)}
@@ -819,6 +1065,11 @@ export default function App() {
           folder={folder}
           theme={theme}
           setTheme={setTheme}
+          accent={accent}
+          setAccent={(id) => {
+            applyAccent(id);
+            setAccent(id);
+          }}
         />
       )}
     </div>
