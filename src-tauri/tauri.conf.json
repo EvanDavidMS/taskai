@@ -48,7 +48,8 @@
           "Spanish"
         ],
         "displayLanguageSelector": false,
-        "startMenuFolder": "TaskAI"
+        "startMenuFolder": "TaskAI",
+        "installerHooks": "./windows/hooks.nsh"
       }
     }
   }

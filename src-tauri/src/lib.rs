@@ -1056,6 +1056,46 @@ fn kill_ollama() -> Result<(), String> {
     Ok(())
 }
 
+/// Borra un modelo descargado (libera su espacio en disco).
+#[tauri::command]
+async fn ai_delete(model: String) -> Result<(), String> {
+    let res = reqwest::Client::new()
+        .delete(format!("{OLLAMA_URL}/api/delete"))
+        .json(&serde_json::json!({ "model": model }))
+        .send()
+        .await
+        .map_err(|_| "OLLAMA_OFF".to_string())?;
+    if res.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("Ollama no pudo borrar el modelo ({})", res.status()))
+    }
+}
+
+/// Espacio que ocupa cada modelo descargado (en bytes).
+#[tauri::command]
+async fn ai_model_sizes() -> Result<HashMap<String, u64>, String> {
+    #[derive(Deserialize)]
+    struct Tag {
+        name: String,
+        #[serde(default)]
+        size: u64,
+    }
+    #[derive(Deserialize)]
+    struct Tags {
+        models: Vec<Tag>,
+    }
+    let tags: Tags = reqwest::Client::new()
+        .get(format!("{OLLAMA_URL}/api/tags"))
+        .send()
+        .await
+        .map_err(|_| "OLLAMA_OFF".to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(tags.models.into_iter().map(|t| (t.name, t.size)).collect())
+}
+
 /// Enciende Ollama y espera (hasta 30 s) a que responda.
 #[tauri::command]
 async fn ollama_start() -> Result<(), String> {
@@ -1372,6 +1412,8 @@ pub fn run() {
             ai_structure,
             ollama_start,
             ollama_stop,
+            ai_delete,
+            ai_model_sizes,
             set_ai_power
         ])
         .build(tauri::generate_context!())

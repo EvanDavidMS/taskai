@@ -1107,6 +1107,7 @@ export default function App() {
                 onProfileChanged={loadAll}
                 power={power}
                 onPower={setAiPower}
+                ask={setAsk}
               />
             ) : section === "trash" ? (
               <TrashView

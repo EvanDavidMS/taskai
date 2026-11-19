@@ -136,6 +136,8 @@ export const SHORTCUTS: [string, string][] = [
   ["Supr", "Mandar a la papelera la tarjeta seleccionada"],
 ];
 
+export type AskFn = (o: { title: string; text: string; ok: string; run: () => void }) => void;
+
 type Tab = "general" | "look" | "ai" | "remind" | "keys";
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: "general", label: "General", icon: "settings" },
@@ -159,9 +161,11 @@ export default function Settings({
   onProfileChanged,
   power,
   onPower,
+  ask,
 }: {
   power: "idle" | "starting" | "stopping";
   onPower: (on: boolean) => void;
+  ask: AskFn;
   models: string[];
   model: string;
   setModel: (m: string) => void;
@@ -211,6 +215,7 @@ export default function Settings({
             onRefresh={onRefresh}
             power={power}
             onPower={onPower}
+            ask={ask}
           />
         )}
         {tab === "remind" && <RemindTab />}
@@ -421,6 +426,7 @@ function AiTab({
   onRefresh,
   power,
   onPower,
+  ask,
 }: {
   models: string[];
   model: string;
@@ -429,6 +435,7 @@ function AiTab({
   onRefresh: () => Promise<void>;
   power: "idle" | "starting" | "stopping";
   onPower: (on: boolean) => void;
+  ask: AskFn;
 }) {
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [osTab, setOsTab] = useState<OsKey | null>(null);
@@ -472,6 +479,42 @@ function AiTab({
   const extra = models.filter((m) => !RECOMMENDED.some((r) => r.name === m));
   const isInstalled = (n: string) => models.includes(n) || models.includes(`${n}:latest`);
 
+  // Cuánto ocupa cada modelo descargado
+  const [sizes, setSizes] = useState<Record<string, number>>({});
+  const modelsKey = models.join("|");
+  useEffect(() => {
+    invoke<Record<string, number>>("ai_model_sizes").then(setSizes).catch(() => setSizes({}));
+  }, [modelsKey]);
+  const gb = (b: number) => `${(b / 1024 ** 3).toFixed(1)} GB`;
+
+  /** Botón de basura: borra el modelo de la computadora (con confirmación). */
+  function DeleteModel({ name }: { name: string }) {
+    return (
+      <button
+        className="icon-btn danger-hover"
+        title="Eliminar este modelo de tu computadora"
+        aria-label={`Eliminar el modelo ${name}`}
+        onClick={() =>
+          ask({
+            title: "¿Eliminar este modelo?",
+            text: `Se borrará ${name}${sizes[name] ? ` y liberarás ${gb(sizes[name])}` : ""}. Lo puedes volver a descargar cuando quieras.`,
+            ok: "Sí, eliminar",
+            run: async () => {
+              try {
+                await invoke("ai_delete", { model: name });
+              } catch (e) {
+                alert(String(e));
+              }
+              await onRefresh(); // si era el que usabas, TaskAI cambia solo a otro que tengas
+            },
+          })
+        }
+      >
+        <Icon name="trash" size={15} />
+      </button>
+    );
+  }
+
   return (
     <>
       <section className="set-card status-card">
@@ -513,6 +556,10 @@ function AiTab({
         desc="Ollama sigue corriendo aunque cierres TaskAI y, mientras tanto, ocupa memoria de tu tarjeta de video. Aquí decides qué pasa."
       >
         <AutoPower />
+        <p className="set-note">
+          Si un día desinstalas TaskAI, el desinstalador te pregunta si también quieres quitar Ollama y los modelos,
+          para no dejar nada en tu computadora.
+        </p>
       </Card>
 
       <Card title="Modelo" desc="El “cerebro” de la IA. Se descarga una sola vez y funciona sin internet.">
@@ -541,13 +588,16 @@ function AiTab({
                   {pr?.error && <p className="err-text">Error: {pr.error}</p>}
                 </div>
                 {installed ? (
-                  active ? (
-                    <span className="in-use">✓ En uso</span>
-                  ) : (
-                    <button className="btn" onClick={() => setModel(r.name)}>
-                      Usar
-                    </button>
-                  )
+                  <div className="model-actions">
+                    {active ? (
+                      <span className="in-use">✓ En uso</span>
+                    ) : (
+                      <button className="btn" onClick={() => setModel(r.name)}>
+                        Usar
+                      </button>
+                    )}
+                    <DeleteModel name={r.name} />
+                  </div>
                 ) : (
                   <button className="btn" disabled={aiOff || (!!pr && !pr.error)} onClick={() => pull(r.name)}>
                     {pr && !pr.error ? "Descargando…" : "⬇ Descargar"}
@@ -563,14 +613,19 @@ function AiTab({
             <div className="models">
               {extra.map((m) => (
                 <div key={m} className={`model compact ${model === m ? "active" : ""}`}>
-                  <b>{m}</b>
-                  {model === m ? (
-                    <span className="in-use">✓ En uso</span>
-                  ) : (
-                    <button className="btn" onClick={() => setModel(m)}>
-                      Usar
-                    </button>
-                  )}
+                  <b>
+                    {m} {sizes[m] ? <span className="size">{gb(sizes[m])}</span> : null}
+                  </b>
+                  <div className="model-actions">
+                    {model === m ? (
+                      <span className="in-use">✓ En uso</span>
+                    ) : (
+                      <button className="btn" onClick={() => setModel(m)}>
+                        Usar
+                      </button>
+                    )}
+                    <DeleteModel name={m} />
+                  </div>
                 </div>
               ))}
             </div>
