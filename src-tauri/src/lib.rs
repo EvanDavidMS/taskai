@@ -1346,6 +1346,72 @@ fn search_notes(query: String) -> Result<Vec<SearchHit>, String> {
     Ok(hits)
 }
 
+/// Nota donde caen los pendientes que se agregan a mano desde la vista Pendientes.
+const LOOSE_TASKS: &str = "Pendientes sueltos";
+
+/// Agrega un pendiente a mano. Va a la nota "Pendientes sueltos" (la crea si no existe), fijada
+/// para que la IA no la reescriba. `when` ya viene como "viernes, 20 de noviembre, 2:00 PM".
+#[tauri::command]
+fn add_task(text: String, when: Option<String>) -> Result<String, String> {
+    let text = text.trim().replace('\n', " ");
+    if text.is_empty() {
+        return Err("Escribe el pendiente".into());
+    }
+    let when = when.map(|w| w.trim().to_string()).filter(|w| !w.is_empty());
+    let mut meta = load_meta();
+    let existing = meta.iter().find(|(id, m)| m.title == LOOSE_TASKS && find_note(id).is_ok()).map(|(id, _)| id.clone());
+    let id = match existing {
+        Some(id) => id,
+        None => {
+            let id = create_note(Some(INBOX.to_string()))?;
+            meta = load_meta();
+            id
+        }
+    };
+    let info = meta.entry(id.clone()).or_default();
+    info.title = LOOSE_TASKS.to_string();
+    info.pinned = true; // la IA no la reescribe
+    info.locked = true; // ni la cambia de carpeta
+    save_meta(&meta)?;
+
+    // Texto crudo: una línea por pendiente, para que la nota se entienda sola
+    let (_, path) = find_note(&id)?;
+    let mut raw = fs::read_to_string(&path).unwrap_or_default();
+    if !raw.is_empty() && !raw.ends_with('\n') {
+        raw.push('\n');
+    }
+    raw.push_str(&match &when {
+        Some(w) => format!("- {text} — {w}\n"),
+        None => format!("- {text}\n"),
+    });
+    fs::write(&path, raw).map_err(|e| e.to_string())?;
+
+    // Versión ordenada: la lista de palomitas
+    let sp = structured_path(&id)?;
+    let mut md = fs::read_to_string(&sp).unwrap_or_default();
+    if md.trim().is_empty() {
+        md = format!("# {LOOSE_TASKS}\n\n## 📌 Pendientes\n");
+    } else if !md.ends_with('\n') {
+        md.push('\n');
+    }
+    md.push_str(&match &when {
+        Some(w) => format!("- [ ] {text} — **{w}**\n"),
+        None => format!("- [ ] {text}\n"),
+    });
+    fs::write(&sp, md).map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+/// Exportar: escribe un archivo donde el usuario eligió (diálogo "Guardar como").
+#[tauri::command]
+fn export_file(path: String, content: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !p.is_absolute() {
+        return Err("Ruta inválida".into());
+    }
+    fs::write(p, content).map_err(|e| format!("No pude guardar el archivo: {e}"))
+}
+
 /// Las versiones ordenadas de todas las notas (para juntar los pendientes en una sola vista).
 #[tauri::command]
 fn all_structured() -> Result<HashMap<String, String>, String> {
@@ -1460,6 +1526,8 @@ pub fn run() {
             save_structured,
             all_structured,
             search_notes,
+            add_task,
+            export_file,
             create_note,
             delete_note,
             list_trash,

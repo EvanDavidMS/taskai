@@ -324,12 +324,14 @@ input, textarea, select { font: inherit; color: inherit; }
   letter-spacing: 0.02em; color: var(--heading);
 }
 .tgroup h2 em { font-style: normal; font-weight: 500; font-size: 12px; color: var(--faint); }
-.tgroup.late h2 { color: var(--err); }
-.tgroup.today h2 { color: var(--accent); }
+.tgroup.g-late h2 { color: var(--err); }
+.tgroup.g-today h2 { color: var(--accent); }
 .tlist {
   background: var(--card); border: 1px solid var(--card-line); border-radius: 16px; box-shadow: var(--card-shadow);
-  overflow: hidden;
 }
+.tlist > :first-child { border-radius: 16px 16px 0 0; }
+.tlist > :last-child { border-radius: 0 0 16px 16px; }
+.tlist > :only-child { border-radius: 16px; }
 .trow {
   display: flex; align-items: center; gap: 14px; padding: 12px 16px; animation: card-in 0.2s ease both;
   cursor: pointer; user-select: none; transition: background 0.12s;
@@ -355,8 +357,68 @@ input, textarea, select { font: inherit; color: inherit; }
   flex-shrink: 0; font-size: 12px; font-weight: 550; padding: 4px 10px; border-radius: 99px; white-space: nowrap;
   color: var(--muted); background: var(--hover);
 }
-.twhen.late { color: var(--err); background: var(--err-soft); }
-.twhen.today { color: var(--accent); background: var(--accent-soft); }
+.twhen.g-late { color: var(--err); background: var(--err-soft); }
+.twhen.g-today { color: var(--accent); background: var(--accent-soft); }
+
+/* Agregar un pendiente a mano */
+.add-task {
+  display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; margin-bottom: 12px;
+  background: var(--card); border: 1px solid var(--card-line); border-radius: 16px; box-shadow: var(--card-shadow);
+  color: var(--faint); transition: border-color 0.12s, box-shadow 0.12s;
+}
+.add-task:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+.add-task input { border: 0; outline: none; background: none; color: var(--text); min-width: 0; }
+.add-task .add-text { flex: 1; padding: 6px 2px; font-size: 14px; }
+.add-task input[type=date], .add-task input[type=time] {
+  padding: 6px 8px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--muted);
+}
+.add-task input[type=time]:disabled { opacity: 0.45; }
+.add-task input::-webkit-calendar-picker-indicator { opacity: 0.6; cursor: pointer; }
+:root:not([data-theme="light"]) .add-task input::-webkit-calendar-picker-indicator { filter: invert(1); }
+.tasks-bar .seg { margin-left: auto; }
+
+/* Pastilla de fecha: también es botón para cambiarla */
+.twhen-wrap { position: relative; flex-shrink: 0; }
+button.twhen { cursor: pointer; transition: filter 0.12s, box-shadow 0.12s; }
+button.twhen:hover { box-shadow: 0 0 0 2px var(--accent-line); }
+.twhen.add { color: var(--faint); background: transparent; border: 1px dashed var(--line); }
+.when-pop {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: 250px; padding: 14px;
+  display: flex; flex-direction: column; gap: 10px; cursor: default;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); animation: pop 0.14s ease;
+}
+.when-pop label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.when-pop label em { font-style: normal; font-weight: 400; color: var(--faint); }
+.when-pop input { padding: 8px 10px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); color: var(--text); outline: none; }
+.when-pop input:focus { border-color: var(--accent-line); }
+:root:not([data-theme="light"]) .when-pop input::-webkit-calendar-picker-indicator { filter: invert(1); }
+.when-actions { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.when-actions .link { margin-right: auto; }
+.link.danger { color: var(--err); }
+.when-actions .btn { padding: 6px 12px; }
+
+/* Vista de semana */
+.week-nav { display: flex; align-items: center; gap: 6px; margin: 4px 0 12px; font-weight: 600; color: var(--heading); }
+.week-nav .icon-btn { width: 30px; height: 30px; }
+.week-nav .flip .ico { transform: scaleX(-1); }
+.week-extra { margin-left: auto; font-size: 12.5px; font-weight: 400; color: var(--faint); }
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.wday {
+  min-height: 160px; padding: 10px 8px; border-radius: 16px;
+  background: var(--card); border: 1px solid var(--card-line); box-shadow: var(--card-shadow);
+}
+.wday.today { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+.wday h3 { display: flex; align-items: baseline; gap: 6px; margin: 0 4px 8px; font-size: 12px; font-weight: 500; color: var(--muted); text-transform: capitalize; }
+.wday h3 b { font-size: 18px; font-weight: 700; color: var(--heading); }
+.wday.today h3, .wday.today h3 b { color: var(--accent); }
+.wlist { display: flex; flex-direction: column; gap: 6px; }
+.wtime { display: block; margin: 0 6px 2px; font-size: 11px; font-weight: 600; color: var(--accent); }
+.wempty { margin: 6px; color: var(--faint); font-size: 12px; }
+.trow.compact { padding: 8px; gap: 8px; border-radius: 10px; align-items: flex-start; background: var(--panel); }
+.trow.compact .tcheck { width: 16px; height: 16px; margin-top: 2px; }
+.trow.compact .ttext { font-size: 12.5px; }
+.trow.compact .tmeta .ftag { display: none; }
+.trow.compact .tnote { font-size: 11.5px; }
 
 /* ---------- Configuración: recordatorios ---------- */
 .switch-row { display: flex; align-items: center; gap: 12px; cursor: pointer; color: var(--text); }
@@ -847,6 +909,10 @@ kbd {
   .board-title h1 { font-size: 26px; }
   .search { flex: 1 1 100%; }
   .tasks { padding: 12px 20px 28px; }
+  .week { grid-template-columns: 1fr; }
+  .wday { min-height: 0; }
+  .add-task { flex-wrap: wrap; }
+  .add-task .add-text { flex-basis: 100%; }
   .settings { grid-template-columns: 1fr; gap: 14px; padding: 12px 20px 32px; }
   .set-nav { position: static; flex-direction: row; overflow-x: auto; gap: 4px; padding-bottom: 2px; }
   .set-tab span { display: none; }
@@ -954,3 +1020,34 @@ kbd {
   .theme-card { flex-direction: row; align-items: center; }
   .theme-card .mock { width: 90px; height: 48px; }
 }
+
+/* =========================================================
+   Exportar a PDF: al imprimir solo sale la nota, en claro
+   ========================================================= */
+.print-area { display: none; }
+@media print {
+  @page { margin: 18mm 16mm; }
+  :root, html, body { overflow: visible !important; height: auto !important; background: #fff !important; color-scheme: light; }
+  .print-area, .print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .app, .main { display: block !important; height: auto !important; }
+  .sidebar, .backdrop, .toolbar, .pane-tabs, .split, .board, .toast, .update-card, .modal-wrap,
+  .menu, .menu-backdrop { display: none !important; }
+  .print-area {
+    display: block !important; color: #1c1b19; background: #fff;
+    --heading: #111; --body: #2a2825; --faint: #8a857c; --muted: #5d5850; --line: #ddd6cb;
+    --card: #fff; --card-line: #ddd6cb; --card-shadow: none; --hover: transparent;
+    --accent: #333; --accent-soft: #f1efeb; --accent-line: #ccc; --err: #b42318; --err-soft: #fdecea; --code-bg: #f3f0ea;
+  }
+  .print-area .md { max-width: none; font-size: 12pt; line-height: 1.55; }
+  .print-area .md h1 { font-size: 22pt; }
+  .print-area .md ul:has(> li > input[type="checkbox"]) { break-inside: avoid; }
+  .print-area .md input[type="checkbox"]:checked { border: 6px solid #333; background: none; }
+  .print-area .note-imgs { max-width: none; }
+  .print-area .note-img img { height: auto; max-height: 220px; max-width: 48%; cursor: default; }
+}
+
+.tasks:has(.week) { max-width: 1240px; }
+
+.trow:has(.when-pop) { position: relative; z-index: 40; }
+.when-pop { width: 270px; }
+.when-actions .link { white-space: nowrap; }

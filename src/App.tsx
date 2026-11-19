@@ -8,12 +8,13 @@ import Onboarding from "./Onboarding";
 import { applyAccent, savedAccent } from "./accents";
 import { FolderTag, Icon, Logo, folderLook } from "./icons";
 import { listen } from "@tauri-apps/api/event";
-import { type Task, groupOf, parseTasks, parseWhen, whenLabel } from "./tasks";
+import { type Task, formatWhen, groupOf, parseTasks, parseWhen, setTaskWhen, whenLabel } from "./tasks";
 import { checkReminders } from "./reminders";
-import TasksView from "./TasksView";
+import TasksView, { type WhenValue } from "./TasksView";
 import TrashView from "./TrashView";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { UpdateBanner, findUpdate } from "./Updater";
+import { mdToText, printPdf, saveMarkdown } from "./exporter";
 import "./App.css";
 
 type NoteMeta = {
@@ -233,7 +234,7 @@ function renderMd(md: string) {
       const t: Task | null = p ? { noteId: "", idx: 0, text: "", done: false, due: p.due, hasTime: p.hasTime } : null;
       const label = t ? whenLabel(t) : when;
       const g = t ? groupOf(t) : "none";
-      return `${box}<span class="ttext">${text.trim()}</span><span class="twhen ${g}">${label}</span></li>`;
+      return `${box}<span class="ttext">${text.trim()}</span><span class="twhen g-${g}">${label}</span></li>`;
     },
   );
 }
@@ -302,6 +303,7 @@ export default function App() {
   const [folderFilter, setFolderFilter] = useState<string | null>(null);
   const [newFolder, setNewFolder] = useState<string | null>(null); // input de nueva carpeta
   const [moveOpen, setMoveOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [accent, setAccent] = useState(savedAccent); // color principal (Configuración → Apariencia)
   const [sortBy, setSortBy] = useState<"recent" | "az">("recent"); // orden de las tarjetas del tablero
@@ -805,6 +807,29 @@ export default function App() {
   const aiText = useMemo(() => stripImages(content), [content]);
   const aiKey = aiKeyOf(title, aiText);
   const images = useMemo(() => imagesIn(content), [content]);
+  // Lo que se exporta: la versión ordenada; si todavía no hay, tus apuntes (con su título)
+  const exportMd = useMemo(() => {
+    if (structured.trim()) return structured;
+    const t = title.trim();
+    return (t ? `# ${t}\n\n` : "") + stripImages(content);
+  }, [structured, title, content]);
+  const printHtml = useMemo(() => (activeId ? renderMd(exportMd) : ""), [exportMd, activeId]);
+  const exportTitle = title.trim() || notes.find((n) => n.id === activeId)?.title || "Nota";
+
+  async function doExport(kind: "pdf" | "md" | "text" | "mdcopy") {
+    setExportOpen(false);
+    try {
+      if (kind === "pdf") printPdf(exportTitle);
+      else if (kind === "md") {
+        if (await saveMarkdown(exportTitle, exportMd)) setToast({ text: "Nota guardada como Markdown" });
+      } else {
+        await navigator.clipboard.writeText(kind === "text" ? mdToText(exportMd) : exportMd);
+        setToast({ text: kind === "text" ? "Copiada como texto" : "Copiada como Markdown" });
+      }
+    } catch (e) {
+      setToast({ text: `No se pudo exportar: ${e}` });
+    }
+  }
 
   // La IA ordena cuando dejas de escribir (salvo que hayas fijado la versión ordenada)
   useEffect(() => {
@@ -851,6 +876,34 @@ export default function App() {
     const next = toggleTask(structured, all.indexOf(box));
     setStructured(next);
     await putStructured(activeId, next);
+  }
+
+  /** Agregar un pendiente a mano (va a la nota "Pendientes sueltos"). */
+  async function addTask(text: string, when: WhenValue) {
+    try {
+      await invoke("add_task", { text, when: when ? formatWhen(when.due, when.hasTime) : null });
+      await refresh();
+      setToast({ text: "Pendiente agregado" });
+    } catch (e) {
+      setToast({ text: String(e) });
+    }
+  }
+
+  /** Cambiar o quitar la fecha de un pendiente. Fija la nota para que la IA no deshaga el cambio. */
+  async function setTaskDate(t: Task, when: WhenValue) {
+    const md = structMap[t.noteId];
+    if (md == null) return;
+    const next = setTaskWhen(md, t.idx, when ? formatWhen(when.due, when.hasTime) : null);
+    if (t.noteId === activeId) setStructured(next);
+    await putStructured(t.noteId, next);
+    const n = notes.find((x) => x.id === t.noteId);
+    if (n && !n.pinned) {
+      await invoke("set_pinned", { id: t.noteId, pinned: true });
+      await refresh();
+      setToast({ text: "Fecha cambiada. Fijé esa nota para que la IA no la regrese a la de antes." });
+    } else {
+      setToast({ text: when ? "Fecha cambiada" : "Fecha quitada" });
+    }
   }
 
   /** Palomear desde la vista Pendientes (también si esa nota está abierta). */
@@ -1159,7 +1212,14 @@ export default function App() {
                 }}
               />
             ) : section === "tasks" ? (
-              <TasksView tasks={tasks} notes={notes} onToggle={toggleFromList} onOpen={openNote} />
+              <TasksView
+                tasks={tasks}
+                notes={notes}
+                onToggle={toggleFromList}
+                onOpen={openNote}
+                onAdd={addTask}
+                onSetWhen={setTaskDate}
+              />
             ) : (
               <>
             {notes.length > 0 && (
@@ -1335,6 +1395,40 @@ export default function App() {
                     <i /> <span className="status-label">{status[ai].label}</span>
                   </span>
                 )}
+                <div className="move">
+                  <button
+                    className="btn toggle"
+                    onClick={() => setExportOpen((o) => !o)}
+                    title="Exportar la nota (PDF, Markdown o copiar)"
+                    aria-haspopup="menu"
+                    aria-expanded={exportOpen}
+                  >
+                    <Icon name="download" size={15} />
+                    <span className="btn-label">Exportar</span>
+                  </button>
+                  {exportOpen && (
+                    <>
+                      <div className="menu-backdrop" onClick={() => setExportOpen(false)} />
+                      <div className="menu" role="menu">
+                        <div className="menu-title">
+                          {structured.trim() ? "Exporta la versión ordenada" : "Exporta tus apuntes"}
+                        </div>
+                        <button role="menuitem" onClick={() => doExport("pdf")}>
+                          <Icon name="file" size={15} /> Guardar como PDF…
+                        </button>
+                        <button role="menuitem" onClick={() => doExport("md")}>
+                          <Icon name="download" size={15} /> Guardar como Markdown (.md)…
+                        </button>
+                        <button role="menuitem" onClick={() => doExport("text")}>
+                          <Icon name="copy" size={15} /> Copiar como texto
+                        </button>
+                        <button role="menuitem" onClick={() => doExport("mdcopy")}>
+                          <Icon name="copy" size={15} /> Copiar como Markdown
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
                 <button
                   className={`btn toggle ${reading ? "on" : ""}`}
                   onClick={() => setReading((r) => !r)}
@@ -1502,6 +1596,12 @@ export default function App() {
                 )}
                 {ai === "error" && <div className="err-box">{aiError}</div>}
               </div>
+            </div>
+
+            {/* Lo único que sale al imprimir / guardar como PDF (ver @media print) */}
+            <div className="print-area" aria-hidden="true">
+              <div className="md" dangerouslySetInnerHTML={{ __html: printHtml }} />
+              <NoteImages names={images} />
             </div>
           </>
         )}

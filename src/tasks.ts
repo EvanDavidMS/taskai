@@ -96,5 +96,39 @@ export function whenLabel(t: Task): string {
   return `${date} · ${time}`;
 }
 
+/** Fecha en el formato que escribe la IA: "viernes, 20 de noviembre, 2:00 PM" (así parseWhen la entiende igual). */
+export function formatWhen(d: Date, hasTime: boolean): string {
+  const day = d.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" });
+  if (!hasTime) return day;
+  const h = d.getHours();
+  return `${day}, ${h % 12 === 0 ? 12 : h % 12}:${String(d.getMinutes()).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+}
+
+/** Cambia (o quita, con `when = null`) la fecha del pendiente número `idx` en el Markdown. */
+export function setTaskWhen(md: string, idx: number, when: string | null): string {
+  let i = -1;
+  return md.replace(TASK_LINE, (m, a: string, c: string, b: string, rest: string) => {
+    if (++i !== idx) return m;
+    const head = rest.split(" — ")[0].trimEnd();
+    return a + c + b + (when ? `${head} — **${when}**` : head);
+  });
+}
+
+/** "2026-11-20" + "14:30" (de los <input type=date/time>) → Date local. */
+export function fromInputs(date: string, time: string): Date {
+  const [y, mo, d] = date.split("-").map(Number);
+  const [h, mi] = time ? time.split(":").map(Number) : [0, 0];
+  return new Date(y, mo - 1, d, h, mi);
+}
+/** Date → valores para <input type=date> y <input type=time>. */
+export function toInputs(d: Date | null, hasTime: boolean): { date: string; time: string } {
+  if (!d) return { date: "", time: "" };
+  const p = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
+    time: hasTime ? `${p(d.getHours())}:${p(d.getMinutes())}` : "",
+  };
+}
+
 /** Clave estable de un pendiente (para no avisar dos veces del mismo). */
 export const taskId = (t: Task) => `${t.noteId}|${plain(t.text)}|${t.due?.getTime() ?? ""}`;
