@@ -169,7 +169,8 @@ Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
 **⚠ URGENTE: Windows Defender borra TaskAI (falso positivo)**
 - 19 nov: Defender detectó `taskai.exe` 1.3.0 y 1.4.0 como **`Trojan:Win32/Bearfoos.A!ml`** (heurística de machine learning) y lo eliminó (exe, accesos directos y registro). Las notas no se tocan.
 - Evan debe: permitirlo en Historial de protección y **reportar falso positivo** en <https://www.microsoft.com/en-us/wdsi/filesubmission> (subir el setup.exe).
-- En código, quitar lo que parece malware: borrar `Startup\Ollama.lnk` (`remove_ollama_autostart`), `taskkill /F` y `tasklist` (cerrar Ollama de forma normal o por API), y revisar la descarga + instalación silenciosa de Ollama.
+- En código, quitar lo que parece malware: borrar `Startup\Ollama.lnk` (`remove_ollama_autostart`), `taskkill /F` y `tasklist`, y la instalación silenciosa de Ollama.
+- **Plan acordado con Evan:** en vez del instalador de Ollama, usar su **versión portátil** (`ollama-windows-amd64.zip` de los Releases de Ollama; confirmar que existe y su tamaño). TaskAI la descarga a su propia carpeta (p. ej. `%LOCALAPPDATA%\TaskAI\ollama`) y corre `ollama serve` como **proceso hijo** (guardar el `Child` y apagarlo con `child.kill()`, sin `taskkill` a procesos ajenos). Así no hay ventana de Ollama que confunda, ni arranque con Windows, ni instalador silencioso; desinstalar = borrar esa carpeta + `~\.ollama`. Si el usuario ya tiene Ollama instalado, usar el suyo y no tocarlo.
 - A largo plazo: firma de código gratis para open source con **SignPath Foundation** (requiere compilar en GitHub Actions; preguntarle a Evan).
 
 **Pendiente (siguiente sesión)**
