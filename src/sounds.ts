@@ -75,7 +75,9 @@ export async function play(name: SoundName) {
   if (!prefs.on || (name === "tecla" && !prefs.keys)) return;
   if (name === "tecla") {
     const now = performance.now();
-    if (now - lastKey < 30) return; // al dejar una tecla apretada no hace metralleta
+    // Tope de seguridad: dejando una tecla apretada el sistema repite cada ~25-40 ms y cada repetición
+    // suena; solo se descartan disparos casi simultáneos (dos eventos para la misma tecla).
+    if (now - lastKey < 15) return;
     lastKey = now;
   }
   const c = audio();
@@ -91,9 +93,26 @@ export async function play(name: SoundName) {
   src.start();
 }
 
-/** Para el editor: suena con las teclas que escriben (no con Ctrl+algo, flechas, etc.). */
-export function keySound(e: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; repeat: boolean }) {
-  if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+/**
+ * Para el editor: suena con las teclas que escriben (no con Ctrl+algo, flechas, etc.).
+ * También con la tecla apretada (cada letra repetida y cada letra borrada suena), pero
+ * Backspace/Supr ya no suenan cuando no queda nada que borrar.
+ */
+export function keySound(e: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  currentTarget?: EventTarget | null;
+}) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const el = e.currentTarget;
+  if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+    const { selectionStart: a, selectionEnd: b, value } = el;
+    const nothingSelected = a === b;
+    if (e.key === "Backspace" && nothingSelected && a === 0) return;
+    if (e.key === "Delete" && nothingSelected && a === value.length) return;
+  }
   if (e.key.length === 1 || e.key === "Backspace" || e.key === "Enter" || e.key === "Delete" || e.key === "Tab") {
     void play("tecla");
   }

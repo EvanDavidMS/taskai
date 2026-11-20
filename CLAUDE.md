@@ -59,7 +59,7 @@ Documentos/TaskAI/            (dirs::document_dir: ~/Documentos en Linux españo
 ## Cómo funciona la IA (importante: los modelos de 7B son malos con cuentas)
 
 1. **Las fechas y horas las calcula el código, no el modelo.** `annotateDates()` en `App.tsx` pega el valor real al texto que se manda: `mañana` → `mañana [jueves, 19 de noviembre]`, `a la 1` → `a la 1 [1:00 PM]`. "En la mañana" o "esta mañana" no se tocan; "a las 9" sin pista no se adivina.
-2. `ai_structure` (Rust) usa `/api/chat` con un **system prompt de formato fijo** + **2 ejemplos resueltos** (few-shot) + `temperature 0, seed 42, top_k 1` → la misma nota da el mismo resultado.
+2. `ai_structure` (Rust) usa `/api/chat` con un **system prompt de formato fijo** + **3 ejemplos resueltos** (few-shot: estudio, día personal, planes de hoy en la noche/mañana) + `temperature 0, seed 42, top_k 1` → la misma nota da el mismo resultado.
 3. Limpieza en el cliente: `stripNotes()` quita los `[...]` que el modelo copie y `normalizeTimes()` deja todas las horas como `1:00 PM`.
 4. `carryChecks()` conserva las palomitas `[x]` cuando la IA reordena.
 5. `ai_classify` (Rust) elige la carpeta con **JSON schema** (`format` con `enum` de las carpetas existentes) → no puede inventar carpetas.

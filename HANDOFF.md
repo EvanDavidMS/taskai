@@ -1,8 +1,8 @@
 # HANDOFF — continuar TaskAI
 
 > Para la próxima sesión de Claude Code: lee esto completo y luego [`CLAUDE.md`](CLAUDE.md).
-> Última actualización: **19 de noviembre de 2026**, desde la PC de escritorio de Evan (**Windows 11, RTX 3060 12 GB, 16 GB RAM**).
-> Versión publicada: **v1.4.4** (Windows + Linux, compilada en GitHub Actions) (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
+> Última actualización: **19 de noviembre de 2026 (noche)**, desde la **laptop de Evan (EndeavourOS/Arch + Hyprland/Quickshell, pantalla al 133 %)**. Antes se trabajaba en la PC de escritorio (**Windows 11, RTX 3060 12 GB, 16 GB RAM**).
+> Versión publicada: **v1.4.5** (Windows + Linux, compilada en GitHub Actions) (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
 
 ## 1. Dónde vamos
 
@@ -15,6 +15,7 @@ TaskAI está publicado y un amigo de Evan ya lo instaló desde GitHub. Lo que ha
 - **Pegar imágenes** con `Ctrl + V` → `.taskai/img/<ms>.png`; en el texto queda `![imagen](img/<ms>.png)`. No se mandan a la IA; se ven como miniaturas.
 - **Modo lectura** (`Ctrl + E`): solo la versión ordenada, centrada.
 - Pendientes en la versión ordenada como **tarjeta de renglones**: todo el renglón palomea; la fecha va en una pastilla (roja si ya pasó, de color si es hoy).
+- **Versión ordenada estilo "marcatexto"** (v1.4.5): las negritas de la IA se pintan como pastilla suave del color de acento (`strong.hl`); si la negrita **es** una fecha/hora (`WHEN_ONLY_RE` en `App.tsx`) va en azul (`strong.hl.when`). El resumen (`>`) es un párrafo de entrada sin caja (tenue, lo importante en oscuro); los `##` son etiquetas discretas en mayúsculas. Tokens `--hl-bg`, `--hl-when-bg`, `--hl-when-fg` en los dos temas.
 
 **Organizar**
 - **Menú lateral**: logo, botón "Nueva nota", Todas las notas, **Pendientes**, carpetas (ícono de línea + color propio), #etiquetas, **Papelera**, y abajo IA (⏻), tema y Configuración.
@@ -194,8 +195,27 @@ Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
   - *Publicar desde Linux:* no hay `pwsh`; se hizo a mano lo mismo que `publicar.ps1` (llave en `~/.tauri/taskai.key`).
 10. ~~Plantilla de **Diario**~~ ✅ v1.4.1 `create_note` en "Diario" escribe 4 preguntas (`DIARY_PROMPTS` en `lib.rs` **y** `src/templates.ts`: mantenerlas iguales). `strip_empty_prompts`/`stripEmptyPrompts` quitan las que quedaron sin contestar: así una plantilla vacía cuenta como nota vacía (se descarta), no se manda a la IA, no cuenta palabras y sale "Nota sin título". Prueba: `cargo test --lib`.
 11. ~~**Microanimaciones**~~ ✅ v1.4.1 bloque al final de `App.css`: entrar a la nota, tablero con `key` por sección (vuelve a animar), tarjetas escalonadas (`--i`), punto de la palomita con rebote (`::after`) y tachado que aparece suave; todo se apaga con `prefers-reduced-motion`. Las capturas headless congelan las animaciones: para capturar, apagarlas con un estilo (`?still` en el preview).
-12. ~~**Sonidos**~~ ✅ v1.4.3 `src/sounds.ts` (Web Audio, se precargan; volumen por sonido en `VOLUME`), archivos en `public/sounds/`: `tecla` (cada tecla en el editor y el título, tono un poco al azar, sin repetir al dejar apretada), `papelera` (mandar a la papelera), `palomita` (solo al palomear, no al despalomear), `ordenada` (la IA terminó), `recordatorio`. Los originales de Evan están en Descargas (los dos con nombre: tecla y papelera; los 3 de Pixabay los repartí yo). Configuración → General → Sonidos: interruptor general + uno para las teclas + botones para probar. `localStorage` `taskai.sounds` = `{on, keys}`. Crédito de Pixabay en el README (no son GPL).
+12. ~~**Sonidos**~~ ✅ v1.4.3 `src/sounds.ts` (Web Audio, se precargan; volumen por sonido en `VOLUME`), archivos en `public/sounds/`: `tecla` (cada tecla en el editor y el título, tono un poco al azar; desde la 1.4.5 también con la tecla apretada), `papelera` (mandar a la papelera), `palomita` (solo al palomear, no al despalomear), `ordenada` (la IA terminó), `recordatorio`. Los originales de Evan están en Descargas (los dos con nombre: tecla y papelera; los 3 de Pixabay los repartí yo). Configuración → General → Sonidos: interruptor general + uno para las teclas + botones para probar. `localStorage` `taskai.sounds` = `{on, keys}`. Crédito de Pixabay en el README (no son GPL).
 13. ~~Acciones de Actions en Node 20~~ ✅ checkout@v7, setup-node@v7, upload-artifact@v7, pnpm/action-setup@v6 (todas Node 24).
+
+- **v1.4.5 (19 nov), pulido visual y de uso (probado en la laptop):**
+  - *Barra de la nota a medio ancho:* el botón Ordenar se salía (la barra necesita ~830 px y el corte a solo-íconos era 720). Ahora entre 720 y 900 px el estado queda solo como puntito (`@container (max-width: 900px)`), y si aun así no cabe, el texto del estado se recorta con "…"; los botones nunca se encogen (`.tools > *`). Probado de 1280 a 740 px.
+  - *Arrastrar notas:* en Linux con zoom fraccionario WebKitGTK pinta gigante la "foto" del arrastre. Ahora se esconde con una imagen transparente (`EMPTY_DRAG_IMAGE` + `setDragImage`) y se dibuja una pastilla propia (`.drag-chip`) que sigue al puntero con `dragover` en `document`. Evan lo probó: bien.
+  - *Selección:* `body { user-select: none }` y solo se puede seleccionar en `textarea`, `input` y `.md` (Ctrl+A ya no pinta toda la interfaz). Ojo: la copia invisible de las líneas del editor (`.ln-text`) NO debe ser seleccionable.
+  - *Sonido de teclas:* ahora suena con cada repetición al dejar la tecla apretada (antes se ignoraba `e.repeat`) y con cada letra borrada; Backspace/Supr no suenan si no queda nada que borrar. Tope de 15 ms entre sonidos. Silenciar: Configuración → General → Sonidos (ya existía).
+  - *"Probar aviso"* también toca el sonido del recordatorio.
+  - *AppImage:* `hide_window()` (lo usan todos los programas que lanza TaskAI) ahora quita `LD_LIBRARY_PATH`, `GST_*`, `GTK_*`, `GIO_MODULE_DIR`… si corre como AppImage; si no, programas del sistema cargan las glib viejas del AppImage y truenan (probado con `update-desktop-database`: `undefined symbol: g_string_free_and_steal`).
+  - *IA (prompt):* tercer ejemplo resuelto (`EXAMPLE3_IN/OUT`: planes para hoy en la noche y mañana, con `{HOY}` = hoy sin año) + paso 6 al "pensar" (¿ya pasó o es plan?, ¿cuándo?, "después de X" = mismo día que X) + reglas: los planes nunca en pasado, cada cosa una sola vez, negritas de 1 a 3 palabras. Caso real de Evan (certificados de inglés y ciberseguridad, LoL en la madrugada): antes decía "Terminé el certificado de ciberseguridad", olvidaba el pendiente de hoy y repetía el de inglés; ahora sale bien. Probado con 4 notas (estudio, planes, trabajo y la de Evan), 2 corridas idénticas.
+  - *Actualización automática en Linux:* probada de verdad: el AppImage 1.4.3 de Evan se actualizó solo a la 1.4.4.
+
+**Siguiente versión (1.4.6 o 1.5): mejorar MUCHO la IA** — lo pidió Evan. Lo que se vio al probar la 1.4.5:
+- Cambia nombres propios por genéricos ("Danny y Kuroo" → "amigos").
+- "El parcial del martes" lo pone bajo la sección "Mañana" (el pendiente sí sale con la fecha bien).
+- Sigue cambiando "examen" por "Estudiar …" en Pendientes (regla ya escrita, el 7B no la sigue).
+- Pone muchas negritas por renglón en notas de estudio y a veces frases completas.
+- Es muy frágil: cada palabra que se cambia en el prompt mueve otros casos. Con 4 variantes probadas, arreglar "martes → Mañana" siempre descomponía la nota de Evan.
+- Ideas: un juego fijo de 10-15 notas de prueba (con la respuesta esperada) y un script que las corra todas y diga cuáles fallan, antes de tocar el prompt; separar en dos pasos (primero extraer pendientes con JSON schema, como `ai_classify`, y luego redactar); más ejemplos cortos en lugar de reglas; probar otros modelos (qwen2.5 14B si hay VRAM, llama3.1 8B, gemma) con el mismo juego de pruebas.
+- El script de prueba de esta sesión estaba en el scratchpad (no en el repo): lee `SYSTEM_PROMPT`/`EXAMPLE*_IN/OUT` de `lib.rs`, reemplaza `{MANANA}`/`{HOY}`, y llama `/api/chat` con las mismas opciones. Conviene guardarlo en `scripts/` con notas de ejemplo que no sean de Evan.
 
 ## 9. Límites conocidos
 

@@ -1269,6 +1269,7 @@ Antes de escribir, piensa en silencio (NO lo muestres):
 3. ¿Qué abreviaturas o faltas hay que corregir?
 4. ¿Hay tareas, fechas o exámenes? Convierte fechas relativas (hoy, mañana, el viernes) en fechas concretas usando la fecha de hoy.
 5. ¿Qué le faltaría saber a alguien para entender bien estos apuntes?
+6. Para cada cosa: ¿ya pasó o es un plan? ¿Cuándo se hará: hoy, hoy en la noche, mañana u otro día (el martes…)? "Después de terminar X" se hace el mismo día que X. Cada sección de día lleva el día que dicen los apuntes: lo del martes va en "Martes", no en "Mañana".
 
 Responde SIEMPRE con este formato exacto, en este orden. Omite una sección solo si quedaría vacía:
 
@@ -1293,6 +1294,9 @@ Reglas:
 - Título específico, nunca genérico ("Diario", "Notas").
 - Lo que está entre corchetes [jueves, 19 de noviembre] [1:00 PM] ya está calculado: úsalo tal cual para fechas y horas, sin corchetes. No hagas cuentas tú.
 - Pendientes = solo compromisos (juntas, citas, clases, prácticas, exámenes, entregas). Comer, jugar, descansar o los deseos ("ojalá") NO son pendientes.
+- Respeta el tiempo de cada cosa: lo que el usuario PLANEA hacer (necesito, tengo que, voy a, termino a las…) se escribe como plan ("Terminar…", "Salir…"), NUNCA como algo que ya pasó ("Terminé…"). Solo va en pasado lo que dice que ya hizo.
+- Cada cosa va una sola vez, en la sección del momento en que se hará. Ejemplo: "el de inglés lo hago mañana" va SOLO en "Mañana", nunca también en "Hoy".
+- Negritas solo en 1 a 3 palabras clave por renglón, nunca en una frase completa.
 - Usa el mismo idioma que los apuntes."###;
 
 /// Un ejemplo resuelto: le enseña al modelo exactamente el estilo que queremos.
@@ -1301,7 +1305,12 @@ const EXAMPLE_OUT: &str = "# La célula y sus organelos\n> Cada organelo de la c
 
 /// Segundo ejemplo: nota personal. Enseña que los deseos no son pendientes y que las citas sí.
 const EXAMPLE2_IN: &str = "hoy me fue bien, me levante tarde, comi con mi abuela y luego jugue fut con los compas. mañana [{MANANA}] tengo cita con el dentista a las 10am [10:00 AM] y luego voy a ver una peli y jugar play. ojala pueda dormir mas";
-const EXAMPLE2_OUT: &str = "# Comida con la abuela y fútbol\n> Un día tranquilo con familia y deporte.\n\n## Hoy\n- Me levanté tarde.\n- **Comí con mi abuela**.\n- Jugué **fútbol** con mis amigos.\n\n## Mañana\n- Cita con el dentista a las 10:00 AM.\n- Después: ver una película y jugar videojuegos.\n- Ojalá pueda dormir más.\n\n## 📌 Pendientes\n- [ ] Cita con el dentista — **{MANANA}, 10:00 AM**";
+const EXAMPLE2_OUT: &str = "# Comida con la abuela y fútbol\n> Un día tranquilo con familia y deporte.\n\n## Hoy\n- Me levanté tarde.\n- Comí con mi **abuela**.\n- Jugué **fútbol** con mis amigos.\n\n## Mañana\n- Cita con el dentista a las 10:00 AM.\n- Después: ver una película y jugar videojuegos.\n- Ojalá pueda dormir más.\n\n## 📌 Pendientes\n- [ ] Cita con el dentista — **{MANANA}, 10:00 AM**";
+
+/// Tercer ejemplo: planes para hoy en la noche y para mañana. Enseña a escribir los planes como planes
+/// (no "Terminé…"), a dejar el "después de…" el mismo día, a no repetir y a sacar el pendiente de hoy.
+const EXAMPLE3_IN: &str = "hoy fue un dia pesado, tengo que hacer mis tareas de quimica y de historia. salgo del trabajo a las 8pm [8:00 PM], llego a mi casa como a las 9 [9:00 PM] y hago por fin la de quimica y la de historia la hago mañana [{MANANA}] en la tarde con calma. y despues de terminar la de quimica ver un capitulo de mi serie en la noche jaja.";
+const EXAMPLE3_OUT: &str = "# Tareas de química e historia\n> Día pesado: hoy en la noche toca la tarea de **química** y mañana en la tarde la de **historia**.\n\n## Hoy en la noche\n- Salir del trabajo a las 8:00 PM y llegar a casa como a las 9:00 PM.\n- Hacer la **tarea de química**.\n- Después de la tarea de química: ver un capítulo de mi **serie**.\n\n## Mañana en la tarde\n- Hacer la **tarea de historia** con calma.\n\n## 📌 Pendientes\n- [ ] Hacer la tarea de química — **{HOY}, 9:00 PM**\n- [ ] Hacer la tarea de historia — **{MANANA}**";
 
 #[derive(Deserialize)]
 struct ChatResponse {
@@ -1342,6 +1351,8 @@ async fn ai_structure(
     use tauri::Emitter;
     let system = SYSTEM_PROMPT.replace("{HOY}", &today).replace("{CALENDARIO}", &calendar);
     let example_out = EXAMPLE_OUT.replace("{MANANA}", &tomorrow);
+    // "jueves, 19 de noviembre de 2026" → "jueves, 19 de noviembre" (como viene {MANANA})
+    let hoy = today.rsplit_once(" de ").map(|(a, _)| a).unwrap_or(&today);
     let client = reqwest::Client::new();
     let mut res = client
         .post(format!("{OLLAMA_URL}/api/chat"))
@@ -1354,6 +1365,8 @@ async fn ai_structure(
                 { "role": "assistant", "content": example_out },
                 { "role": "user", "content": EXAMPLE2_IN.replace("{MANANA}", &tomorrow) },
                 { "role": "assistant", "content": EXAMPLE2_OUT.replace("{MANANA}", &tomorrow) },
+                { "role": "user", "content": EXAMPLE3_IN.replace("{MANANA}", &tomorrow) },
+                { "role": "assistant", "content": EXAMPLE3_OUT.replace("{MANANA}", &tomorrow).replace("{HOY}", hoy) },
                 { "role": "user", "content": text }
             ],
             // temperatura 0 + semilla fija = misma nota, mismo resultado.

@@ -24,6 +24,10 @@
   --accent: rgb(var(--acc));
   --accent-hover: color-mix(in srgb, rgb(var(--acc)) 86%, white);
   --accent-soft: rgb(var(--acc) / 0.12);
+  /* Marcatexto de la versión ordenada: palabras clave (tu color) y fechas/horas (azul) */
+  --hl-bg: rgb(var(--acc) / 0.18);
+  --hl-when-bg: rgb(56 152 236 / 0.2);
+  --hl-when-fg: #8cc8ff;
   --accent-line: rgb(var(--acc) / 0.32);
   --on-accent: rgb(var(--on-acc));
   --ok: #4ade80;
@@ -78,6 +82,9 @@
   --accent: rgb(var(--acc-l));
   --accent-hover: color-mix(in srgb, rgb(var(--acc-l)) 88%, black);
   --accent-soft: rgb(var(--acc-l) / 0.09);
+  --hl-bg: rgb(var(--acc-l) / 0.11);
+  --hl-when-bg: rgb(30 136 229 / 0.12);
+  --hl-when-fg: #145ea8;
   --accent-line: rgb(var(--acc-l) / 0.3);
   --on-accent: rgb(var(--on-acc-l));
   --ok: #15803d;
@@ -129,6 +136,10 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); overflow: hidden; transition: background 0.2s; }
+/* Que no se pueda seleccionar toda la interfaz (menú, títulos, botones): solo se copia desde tus
+   apuntes, la versión de la IA y los campos donde escribes. */
+body { -webkit-user-select: none; user-select: none; }
+textarea, input, .md { -webkit-user-select: text; user-select: text; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 input, textarea, select { font: inherit; color: inherit; }
 ::selection { background: var(--accent-soft); color: var(--heading); }
@@ -637,21 +648,35 @@ textarea::placeholder { color: var(--faint); }
 .editor:has(textarea:placeholder-shown) .ln-row:first-child .ln-num { opacity: 0.4; }
 .pane-foot { font-size: 11.5px; color: var(--faint); padding-top: 8px; }
 
-.md { line-height: 1.7; color: var(--body); font-size: 15px; transition: opacity 0.3s; max-width: 68ch; }
+/* Versión ordenada: lectura limpia. Texto tenue y lo importante resaltado como marcatexto. */
+.md { line-height: 1.75; color: var(--body); font-size: 15.5px; transition: opacity 0.3s; max-width: 64ch; }
 .md.dim { opacity: 0.45; }
-.md h1 { font-size: 30px; line-height: 1.2; margin: 4px 0 12px; color: var(--heading); letter-spacing: -0.03em; font-weight: 700; }
-.md-tags { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: -4px 0 18px; }
+.md h1 { font-size: 32px; line-height: 1.15; margin: 4px 0 14px; color: var(--heading); letter-spacing: -0.035em; font-weight: 700; }
+.md-tags { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: -6px 0 20px; }
 .md-tags span { color: var(--accent); font-size: 13.5px; font-weight: 500; }
-.md h2 { font-size: 16px; margin: 28px 0 8px; color: var(--heading); letter-spacing: -0.01em; }
-.md h3 { font-size: 14px; margin: 18px 0 6px; color: var(--heading); }
+/* Títulos de sección: etiqueta discreta (el contenido es el protagonista) */
+.md h2 {
+  font-size: 12.5px; margin: 36px 0 10px; color: var(--muted); font-weight: 650;
+  text-transform: uppercase; letter-spacing: 0.07em; line-height: 1.4;
+}
+.md h3 { font-size: 15px; margin: 22px 0 6px; color: var(--heading); font-weight: 650; }
+.md p { margin: 10px 0; }
 .md strong { color: var(--heading); font-weight: 600; }
+/* Negritas de la IA = marcatexto (renderMd les pone la clase) */
+.md strong.hl {
+  background: var(--hl-bg); padding: 1px 4px; border-radius: 5px;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+.md strong.hl.when { background: var(--hl-when-bg); color: var(--hl-when-fg); }
+/* Dentro de los títulos y los renglones de pendientes, sin marcatexto (ya tienen su estilo) */
+.md h1 strong.hl, .md h2 strong.hl, .md h3 strong.hl, .md li > .ttext strong.hl { background: none; padding: 0; margin: 0; color: inherit; }
 .md ul, .md ol { padding-left: 20px; margin: 6px 0; }
-.md li { margin: 4px 0; }
+.md li { margin: 6px 0; padding-left: 2px; }
 .md li::marker { color: var(--faint); }
 /* Pendientes: una tarjeta con renglones, igual que la vista Pendientes. Todo el renglón palomea. */
 .md ul:has(> li > input[type="checkbox"]) {
   list-style: none; padding: 0; margin: 10px 0 6px;
-  background: var(--card); border: 1px solid var(--card-line); border-radius: 16px; box-shadow: var(--card-shadow);
+  background: var(--card); border: 1px solid var(--card-line); border-radius: 16px;
   overflow: hidden;
 }
 .md li:has(> input[type="checkbox"]) {
@@ -676,11 +701,13 @@ textarea::placeholder { color: var(--faint); }
 .md li:has(> input:checked) strong { color: var(--faint); }
 .md code { background: var(--code-bg); padding: 2px 6px; border-radius: 5px; font-size: 13px; }
 .md a { color: var(--accent); }
+/* Resumen: párrafo de entrada, sin caja. Tenue, con lo importante en oscuro. */
 .md blockquote {
-  margin: 0 0 8px; padding: 10px 14px; border-radius: 10px;
-  background: var(--accent-soft); border-left: 3px solid var(--accent); color: var(--body);
+  margin: 0 0 8px; padding: 0 0 0 16px; border-left: 3px solid var(--accent-line);
+  font-size: 17px; line-height: 1.6; color: var(--muted); letter-spacing: -0.005em;
 }
 .md blockquote p { margin: 0; }
+.md blockquote strong { color: var(--heading); }
 
 .empty-ai { flex: 1; display: grid; place-items: center; text-align: center; color: var(--faint); max-width: 320px; margin: 0 auto; line-height: 1.6; }
 .shimmer { display: flex; flex-direction: column; gap: 10px; width: 260px; }
@@ -1092,6 +1119,15 @@ kbd {
 @media (hover: none) { .card-star { opacity: 1; } }
 .card-note[draggable="true"] { -webkit-user-drag: element; }
 .card-note.dragging { opacity: 0.45; transform: scale(0.98); }
+/* Pastilla que sigue al puntero al arrastrar una nota (empieza invisible hasta el primer movimiento) */
+.drag-chip {
+  position: fixed; top: 0; left: 0; z-index: 100; pointer-events: none; opacity: 0;
+  display: flex; align-items: center; gap: 7px; max-width: 260px; padding: 7px 13px; border-radius: 99px;
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--accent-line);
+  box-shadow: var(--shadow); font-size: 13px; font-weight: 550; white-space: nowrap;
+}
+.drag-chip span { overflow: hidden; text-overflow: ellipsis; }
+.drag-chip svg { color: var(--accent); flex-shrink: 0; }
 .sidebar.dragging .nav-row .nav-item { outline: 1.5px dashed var(--line); outline-offset: -2px; }
 .sidebar.dragging .nav-row .nav-item.drop {
   outline: 2px solid var(--accent); background: var(--accent-soft); color: var(--accent); transform: translateX(3px);

@@ -33,6 +33,11 @@ type NoteMeta = {
 type Note = { content: string; structured: string; title: string };
 
 // Imágenes pegadas con Ctrl + V: en el texto quedan como ![imagen](img/<nombre>)
+// Imagen transparente de 1×1 para esconder la "foto" del arrastre del navegador (ver drag-chip).
+// Se crea al cargar para que ya esté lista en el primer dragstart.
+const EMPTY_DRAG_IMAGE = new Image(1, 1);
+EMPTY_DRAG_IMAGE.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
 const IMG_RE = /!\[[^\]]*\]\(img\/([\w.-]+)\)/g;
 const imagesIn = (s: string) => [...s.matchAll(IMG_RE)].map((m) => m[1]);
 /** Lo que se le manda a la IA: el texto sin las referencias a imágenes ni las preguntas de la plantilla sin contestar. */
@@ -224,6 +229,11 @@ function carryChecks(oldMd: string, newMd: string) {
   return newMd.replace(TASK_RE, (m, a, _c, b, rest) => (done.has(taskKey(rest)) ? a + "x" + b + rest : m));
 }
 
+/** ¿La negrita ES una fecha u hora ("viernes, 20 de noviembre", "10:00 PM", "mañana a las 9:00 AM")?
+ *  Una frase que solo la contiene ("Terminar clases a las 10:00 PM") no cuenta: esa va con el color normal. */
+const WHEN_ONLY_RE =
+  /^(?=\S)(?:(?:hoy|mañana|lunes|martes|miércoles|jueves|viernes|sábado|domingo)\b,?\s*)?(?:\d{1,2} de [a-záéíóú]+\b,?\s*)?(?:(?:a las|de|,)?\s*\d{1,2}:\d{2}\s*(?:AM|PM)?)?(?:\s*(?:a|-|–)\s*\d{1,2}:\d{2}\s*(?:AM|PM)?)?\.?$/i;
+
 /**
  * Markdown → HTML seguro. Los pendientes "texto — **fecha**" se pintan como en la vista Pendientes:
  * renglón con círculo, texto y la fecha en una pastilla (roja si ya pasó, de tu color si es hoy).
@@ -239,6 +249,9 @@ function renderMd(md: string) {
       const g = t ? groupOf(t) : "none";
       return `${box}<span class="ttext">${text.trim()}</span><span class="twhen g-${g}">${label}</span></li>`;
     },
+  ).replace(/<strong>([^<]+)<\/strong>/g, (_m, t: string) =>
+    // Las negritas se pintan como marcatexto; fechas y horas con su propio color
+    `<strong class="hl${WHEN_ONLY_RE.test(t.trim()) ? " when" : ""}">${t}</strong>`,
   );
 }
 
@@ -309,6 +322,22 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   // Arrastrar una tarjeta a una carpeta del menú
   const [dragId, setDragId] = useState<string | null>(null);
+  // Al arrastrar una nota se ve una pastillita propia que sigue al puntero (no la "foto" que arma
+  // el navegador: en Linux con zoom fraccionario WebKitGTK la saca gigante).
+  const [dragTitle, setDragTitle] = useState("");
+  const dragChip = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!dragId) return;
+    const move = (e: DragEvent) => {
+      const el = dragChip.current;
+      if (el && (e.clientX || e.clientY)) {
+        el.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 10}px)`;
+        el.style.opacity = "1";
+      }
+    };
+    document.addEventListener("dragover", move);
+    return () => document.removeEventListener("dragover", move);
+  }, [dragId]);
   const [dropFolder, setDropFolder] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [accent, setAccent] = useState(savedAccent); // color principal (Configuración → Apariencia)
@@ -1049,6 +1078,12 @@ export default function App() {
 
   return (
     <div className={`app ${libHidden && activeId ? "focus" : ""}`}>
+      {dragId && (
+        <div ref={dragChip} className="drag-chip" aria-hidden>
+          <Icon name="pencil" size={13} />
+          <span>{dragTitle}</span>
+        </div>
+      )}
       {/* ---------- Menú lateral: carpetas, etiquetas y ajustes ---------- */}
       {listOpen && <div className="backdrop" onClick={() => setListOpen(false)} />}
       <aside className={`sidebar ${listOpen ? "open" : ""} ${dragId ? "dragging" : ""}`}>
@@ -1366,6 +1401,8 @@ export default function App() {
                     onDragStart={(e) => {
                       e.dataTransfer.setData("text/plain", n.id);
                       e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setDragImage(EMPTY_DRAG_IMAGE, 0, 0);
+                      setDragTitle(n.title || "Nota sin título");
                       setDragId(n.id);
                     }}
                     onDragEnd={() => {
