@@ -4,6 +4,8 @@
 > Última actualización: **19 de noviembre de 2026 (noche)**, desde la **laptop de Evan (EndeavourOS/Arch + Hyprland/Quickshell, pantalla al 133 %)**. Antes se trabajaba en la PC de escritorio (**Windows 11, RTX 3060 12 GB, 16 GB RAM**).
 > Versión publicada: **v1.4.5** (Windows + Linux, compilada en GitHub Actions) (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
 
+> ⚠ **19 nov (noche): se reescribió el historial de `main` y de las etiquetas** para quitar la línea `Co-Authored-By: Claude` de todos los commits (Evan no quiere que el repo muestre a Claude como contribuidor). **En la compu de Windows, antes de trabajar:** `git fetch --all --tags --force` y `git reset --hard origin/main` (si hay cambios sin subir, guardarlos antes). Respaldo del historial viejo en la laptop: `~/respaldos/taskai-antes-de-reescribir-2026-11-19.bundle`.
+
 ## 1. Dónde vamos
 
 TaskAI está publicado y un amigo de Evan ya lo instaló desde GitHub. Lo que hay hoy:
