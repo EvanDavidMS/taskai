@@ -906,13 +906,30 @@ fn ollama_binary_exists() -> bool {
     cmd.status().map(|s| s.success()).unwrap_or(false)
 }
 
-/// En Windows, que los procesos no abran una ventana de consola negra.
+/// Prepara un programa externo (ollama, systemctl…):
+/// - Windows: que no abra una ventana de consola negra.
+/// - Linux AppImage: le quita las variables que apuntan a las librerías que trae el AppImage
+///   (GTK, GStreamer, glib viejas de Ubuntu 22.04). Si las hereda, un programa del sistema puede
+///   cargar esas librerías y tronar ("undefined symbol"); probado con update-desktop-database.
 fn hide_window(_cmd: &mut std::process::Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         _cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("APPIMAGE").is_some() {
+        for v in [
+            "LD_LIBRARY_PATH", "LD_PRELOAD", "APPDIR", "GDK_BACKEND", "GDK_PIXBUF_MODULE_FILE",
+            "GIO_MODULE_DIR", "GI_TYPELIB_PATH", "GSETTINGS_SCHEMA_DIR", "GTK_DATA_PREFIX",
+            "GTK_EXE_PREFIX", "GTK_IM_MODULE_FILE", "GTK_PATH", "GTK_THEME", "GST_PLUGIN_PATH",
+            "GST_PLUGIN_PATH_1_0", "GST_PLUGIN_SYSTEM_PATH", "GST_PLUGIN_SYSTEM_PATH_1_0",
+            "GST_PLUGIN_SCANNER", "GST_PLUGIN_SCANNER_1_0", "GST_PTP_HELPER", "GST_PTP_HELPER_1_0",
+            "GST_REGISTRY_REUSE_PLUGIN_SCANNER",
+        ] {
+            _cmd.env_remove(v);
+        }
     }
 }
 
@@ -1639,11 +1656,15 @@ fn integrate_linux() {
     if fs::read_to_string(&path).ok().as_deref() != Some(desktop.as_str()) {
         let _ = fs::write(&path, desktop);
         // Avisar al menú y al tema de íconos (si las herramientas no están, no pasa nada)
-        let _ = std::process::Command::new("update-desktop-database").arg(&apps).status();
-        let _ = std::process::Command::new("gtk-update-icon-cache")
-            .args(["-f", "-t"])
-            .arg(data.join("icons/hicolor"))
-            .status();
+        let mut c = std::process::Command::new("update-desktop-database");
+        c.arg(&apps).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+        hide_window(&mut c);
+        let _ = c.status();
+        let mut c = std::process::Command::new("gtk-update-icon-cache");
+        c.args(["-f", "-t"]).arg(data.join("icons/hicolor"));
+        c.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+        hide_window(&mut c);
+        let _ = c.status();
     }
 }
 

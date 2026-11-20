@@ -21,6 +21,7 @@ Si ya tienes la 1.3.0 o más nueva, TaskAI se actualiza solo. Tus notas y tu con
 - **Linux: ya suenan los sonidos** en el AppImage (le faltaban los componentes de audio).
 - **Linux: el logo de TaskAI** ya sale en las notificaciones, en el menú de apps y en la barra.
 - **"Probar aviso"** (Configuración → Recordatorios) ahora también toca el sonido del recordatorio.
+- **Ventana a medio ancho:** el botón **Ordenar** ya no se sale de la barra de la nota.
 
 ---
 
