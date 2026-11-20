@@ -94,4 +94,4 @@ Crea temporalmente `__preview.html` + `src/__preview.tsx` que usen `mockIPC` de 
 - La versión pública usa **solo Ollama**. **No** implementar login con la suscripción de Claude Pro o ChatGPT Plus: va contra la política de Anthropic y OpenAI (las apps de terceros deben usar API key).
 - Rutas e ids siempre pasan por `safe_id` / `safe_folder` (evitan escaparse de la carpeta con `../`).
 - El Markdown de la IA se sanitiza con DOMPurify antes de pintarlo.
-- Commits en español, descriptivos.
+- Commits en español, descriptivos. **Sin** línea `Co-Authored-By` ni menciones a Claude/IA en commits, PRs o Releases (Evan no quiere que el repo muestre a Claude como contribuidor; en nov 2026 se reescribió el historial para quitarlo).

@@ -70,7 +70,7 @@ if ($Local -or $SinPublicar) {
     # 2) Commit + push y compilar en GitHub Actions
     cargo update --workspace --manifest-path src-tauri\Cargo.toml --offline 2>$null  # Cargo.lock con la versión nueva
     git add -A
-    git commit -m "Versión $Version" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+    git commit -m "Versión $Version"
     git push
     if ($LASTEXITCODE -ne 0) { throw "No se pudo hacer push" }
     $sha = (git rev-parse HEAD).Trim()
@@ -140,7 +140,7 @@ if ($SinPublicar) { Write-Host "Listo (sin publicar)."; exit 0 }
 # 4) (Modo -Local: commit y push aquí) y Release
 if ($Local) {
     git add -A
-    git commit -m "Versión $Version" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+    git commit -m "Versión $Version"
     git push
 }
 gh release create "v$Version" @assets $latestPath --repo $repo --title "TaskAI $Version" --notes-file $Notas --latest
