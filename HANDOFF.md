@@ -2,7 +2,7 @@
 
 > Para la próxima sesión de Claude Code: lee esto completo y luego [`CLAUDE.md`](CLAUDE.md).
 > Última actualización: **19 de noviembre de 2026 (noche)**, desde la **laptop de Evan (EndeavourOS/Arch + Hyprland/Quickshell, pantalla al 133 %)**. Antes se trabajaba en la PC de escritorio (**Windows 11, RTX 3060 12 GB, 16 GB RAM**).
-> Versión publicada: **v1.4.5** (Windows + Linux, compilada en GitHub Actions) (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
+> Versión publicada: **v1.5.0** (Windows + Linux, compilada en GitHub Actions) (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
 
 > ⚠ **19 nov (noche): se reescribió el historial de `main` y de las etiquetas** para quitar la línea `Co-Authored-By: Claude` de todos los commits (Evan no quiere que el repo muestre a Claude como contribuidor). **En la compu de Windows, antes de trabajar:** `git fetch --all --tags --force` y `git reset --hard origin/main` (si hay cambios sin subir, guardarlos antes). Respaldo del historial viejo en la laptop: `~/respaldos/taskai-antes-de-reescribir-2026-11-19.bundle`.
 
@@ -210,14 +210,25 @@ Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
   - *IA (prompt):* tercer ejemplo resuelto (`EXAMPLE3_IN/OUT`: planes para hoy en la noche y mañana, con `{HOY}` = hoy sin año) + paso 6 al "pensar" (¿ya pasó o es plan?, ¿cuándo?, "después de X" = mismo día que X) + reglas: los planes nunca en pasado, cada cosa una sola vez, negritas de 1 a 3 palabras. Caso real de Evan (certificados de inglés y ciberseguridad, LoL en la madrugada): antes decía "Terminé el certificado de ciberseguridad", olvidaba el pendiente de hoy y repetía el de inglés; ahora sale bien. Probado con 4 notas (estudio, planes, trabajo y la de Evan), 2 corridas idénticas.
   - *Actualización automática en Linux:* probada de verdad: el AppImage 1.4.3 de Evan se actualizó solo a la 1.4.4.
 
-**Siguiente versión (1.4.6 o 1.5): mejorar MUCHO la IA** — lo pidió Evan. Lo que se vio al probar la 1.4.5:
+- **v1.5.0 (19 nov), IA en dos pasos + prioridad en pendientes (probado en la laptop):**
+  - *Banco de pruebas* `scripts/ia/`: `casos.json` (20 notas inventadas con lo que DEBE salir; HOY fijo = jueves 19 nov 2026; las `[..]` son las que pondría annotateDates), `evaluar.py` (método de un paso), `dos_pasos.py` (el de la app: lee `SYSTEM_PROMPT`, `EXAMPLE*`, `TASKS_*` de `lib.rs` y aplica `mergeTasks` real de `src/aiTasks.ts` con Node vía `merge.mts`). Uso: `python3 scripts/ia/dos_pasos.py` (todo, ~2 min) o `-c caso -v`. **Regla: medir antes y después de tocar la IA; solo se queda lo que sube la calificación.** Hay que tener Ollama encendido.
+  - *Resultados (qwen2.5:7b):* un paso 11/18 → dos pasos 16/18; con prioridad y 2 casos más: **17/20**. En 6 notas "nuevas" (no usadas para ajustar): 4/6 → 5/6.
+  - *Paso 2 = `ai_tasks` (Rust):* después de `ai_structure`, pide los pendientes como JSON con `format` (JSON schema): `tipo` (compromiso / plan_libre / deseo / ya_hecho), `dia` (enum: hoy + 7 días + "sin fecha", de `nextDays()`), `hora` (enum: solo las horas `[..]` que annotateDates encontró), `prioridad` (alta/normal) y `tipo_nota` (estudio/trabajo/personal). Recibe también la nota ordenada (le dice en qué día quedó cada cosa). 2 ejemplos resueltos con fechas de relleno `{HOY}`, `{MANANA}`, `{D4}`, `{D7}`…
+  - *`mergeTasks` (`src/aiTasks.ts`):* cambia la sección "📌 Pendientes" del modelo por una armada por código: solo compromisos, sin repetir, sin #etiquetas, quita "Estudiar/Repasar para X" si ya está X, horas solo si están en el texto, convierte en viñeta las palomitas que el modelo metió en otras secciones, y en notas personales quita "💡 Para entender mejor". Si `ai_tasks` falla, se quedan los pendientes del modelo. Mientras escribe en vivo no se muestran sus pendientes (`PENDING_SPLIT`).
+  - *Prioridad:* se guarda como `🔴`/`🟡` al inicio del pendiente (`- [ ] 🔴 Examen — **fecha**`); baja = sin marca. `src/tasks.ts`: `Priority`, `splitPriority`, `setTaskPriority`, `nextPriority` (sin → alta → media → sin), `prioRank`. Se ve como puntito (`.tprio`) en la nota y en Pendientes; clic = cambiar (no palomea). Pendientes ordena por prioridad dentro de cada grupo/día. `carryChecks` conserva la prioridad (y las palomitas) cuando la IA reordena. **La IA marcaba "alta" de más** (exámenes, citas) → `saidUrgent()` solo la acepta si en la MISMA oración del texto hay una palabra de urgencia (urgente, importante, sin falta, no se me puede olvidar…) y una palabra del pendiente.
+  - *`annotateDates`:* "mñn"/"mñna" cuentan como "mañana".
+  - *Probado y descartado:* anotar también "hoy [fecha]" (arregla "hoy revisar los correos" pero vuelve pendientes un diario en pasado).
+
+**Siguiente: seguir mejorando la IA** — lo que queda al probar la 1.5.0:
+- Títulos de más de 6 palabras ("Tarea urgente y planes para el fin de semana").
+- "hoy revisar los correos" a veces no sale como pendiente (o sale sin fecha).
+- Lo que se vio en la 1.4.5 (sigue valiendo para el paso 1):
 - Cambia nombres propios por genéricos ("Danny y Kuroo" → "amigos").
 - "El parcial del martes" lo pone bajo la sección "Mañana" (el pendiente sí sale con la fecha bien).
-- Sigue cambiando "examen" por "Estudiar …" en Pendientes (regla ya escrita, el 7B no la sigue).
+- ~~Sigue cambiando "examen" por "Estudiar …" en Pendientes~~ ✅ resuelto con el paso 2 (1.5.0).
 - Pone muchas negritas por renglón en notas de estudio y a veces frases completas.
 - Es muy frágil: cada palabra que se cambia en el prompt mueve otros casos. Con 4 variantes probadas, arreglar "martes → Mañana" siempre descomponía la nota de Evan.
-- Ideas: un juego fijo de 10-15 notas de prueba (con la respuesta esperada) y un script que las corra todas y diga cuáles fallan, antes de tocar el prompt; separar en dos pasos (primero extraer pendientes con JSON schema, como `ai_classify`, y luego redactar); más ejemplos cortos en lugar de reglas; probar otros modelos (qwen2.5 14B si hay VRAM, llama3.1 8B, gemma) con el mismo juego de pruebas.
-- El script de prueba de esta sesión estaba en el scratchpad (no en el repo): lee `SYSTEM_PROMPT`/`EXAMPLE*_IN/OUT` de `lib.rs`, reemplaza `{MANANA}`/`{HOY}`, y llama `/api/chat` con las mismas opciones. Conviene guardarlo en `scripts/` con notas de ejemplo que no sean de Evan.
+- Ideas pendientes: probar otros modelos con `dos_pasos.py -m <modelo>` (llama3.1:8b, gemma; la laptop tiene RTX 5060 de 8 GB → modelos de 7-8B; la PC de Windows 12 GB → cabría un 14B); agregar más casos a `casos.json` cada vez que Evan encuentre una nota mal ordenada (inventada, nunca su nota real: el repo es público).
 
 ## 9. Límites conocidos
 

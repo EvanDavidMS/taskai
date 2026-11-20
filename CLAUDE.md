@@ -27,7 +27,9 @@ App de escritorio de apuntes: el usuario escribe rápido y desordenado a la izqu
 | `src/App.tsx` | Interfaz principal + lógica de IA del lado del cliente (fechas, horas, palomitas) |
 | `src/Onboarding.tsx` | Asistente de bienvenida (primera vez): nombre, tema, carpeta, instalar Ollama, elegir modelo |
 | `src/Settings.tsx` | Página de Configuración (General, Apariencia, IA, Recordatorios, Atajos) |
-| `src/tasks.ts` · `src/TasksView.tsx` | Vista Pendientes: lee las palomitas `- [ ] texto — **fecha, hora**` de todas las notas |
+| `src/tasks.ts` · `src/TasksView.tsx` | Vista Pendientes: lee las palomitas `- [ ] 🔴 texto — **fecha, hora**` de todas las notas (🔴/🟡 = prioridad) |
+| `src/aiTasks.ts` | Paso 2 de la IA: `mergeTasks` arma "📌 Pendientes" con el JSON de `ai_tasks`; `saidUrgent` valida la prioridad |
+| `scripts/ia/` | Banco de pruebas de la IA (`casos.json`, `dos_pasos.py`, `evaluar.py`) |
 | `src/reminders.ts` | Avisos del sistema (plugin notification) para pendientes con hora + resumen diario |
 | `src/TrashView.tsx` | Papelera (restaurar / borrar para siempre) |
 | `src/icons.tsx` | Íconos de línea, logo (SVG) y color/ícono de cada carpeta |
@@ -62,7 +64,8 @@ Documentos/TaskAI/            (dirs::document_dir: ~/Documentos en Linux españo
 2. `ai_structure` (Rust) usa `/api/chat` con un **system prompt de formato fijo** + **3 ejemplos resueltos** (few-shot: estudio, día personal, planes de hoy en la noche/mañana) + `temperature 0, seed 42, top_k 1` → la misma nota da el mismo resultado.
 3. Limpieza en el cliente: `stripNotes()` quita los `[...]` que el modelo copie y `normalizeTimes()` deja todas las horas como `1:00 PM`.
 4. `carryChecks()` conserva las palomitas `[x]` cuando la IA reordena.
-5. `ai_classify` (Rust) elige la carpeta con **JSON schema** (`format` con `enum` de las carpetas existentes) → no puede inventar carpetas.
+5. **Paso 2, `ai_tasks` (Rust):** los pendientes como JSON con opciones cerradas (día de una lista, hora solo de las del texto, tipo compromiso/plan/deseo/hecho, prioridad). `mergeTasks` (`src/aiTasks.ts`) arma la sección "📌 Pendientes" con código. La prioridad alta de la IA solo vale si el usuario escribió "urgente/importante/sin falta…" en esa oración (`saidUrgent`).
+6. `ai_classify` (Rust) elige la carpeta con **JSON schema** (`format` con `enum` de las carpetas existentes) → no puede inventar carpetas.
 
 **Regla de oro:** con modelos chicos, **ejemplos > reglas**. Si algo sale mal, primero agrega o ajusta un ejemplo resuelto; agregar muchas reglas lo confunde.
 
@@ -80,9 +83,9 @@ Configuración del usuario: `config.json` en `dirs::config_dir()/TaskAI/` (Windo
 
 Linux, instalar en el menú de apps: copiar el binario a `~/.local/bin/taskai` (el `.desktop` ya apunta ahí; ver HANDOFF).
 
-## Cómo probar los prompts sin abrir la app
+## Cómo probar la IA sin abrir la app
 
-Hay scripts de Python que leen las constantes de `lib.rs` (`SYSTEM_PROMPT`, `EXAMPLE_IN/OUT`, `EXAMPLE2_IN/OUT`, `folder_hint`) y llaman a Ollama directo. Prueba **siempre** con varias notas y corre 2 veces para confirmar que el resultado es idéntico. Ver HANDOFF → "Cómo probar".
+**Banco de pruebas en `scripts/ia/`** (con Ollama encendido): `python3 scripts/ia/dos_pasos.py` corre las 20 notas de `casos.json` con el prompt y el código reales de la app y dice cuáles fallan (`-c caso -v` para ver una). **Antes y después de tocar cualquier prompt, córrelo**: solo se queda un cambio si sube la calificación sin romper casos que ya pasaban. Si Evan encuentra una nota mal ordenada, agrega un caso parecido (inventado: el repo es público).
 
 ## Cómo verificar la UI
 

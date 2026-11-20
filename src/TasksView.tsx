@@ -6,10 +6,14 @@ import { FolderTag, Icon } from "./icons";
 import {
   GROUP_LABEL,
   GROUP_ORDER,
+  PRIO_LABEL,
   type Group,
+  type Priority,
   type Task,
   fromInputs,
   groupOf,
+  nextPriority,
+  prioRank,
   toInputs,
   whenLabel,
 } from "./tasks";
@@ -27,6 +31,7 @@ export default function TasksView({
   onOpen,
   onAdd,
   onSetWhen,
+  onSetPriority,
 }: {
   tasks: Task[];
   notes: NoteRef[];
@@ -34,6 +39,7 @@ export default function TasksView({
   onOpen: (noteId: string) => void;
   onAdd: (text: string, when: WhenValue) => Promise<void>;
   onSetWhen: (t: Task, when: WhenValue) => Promise<void>;
+  onSetPriority: (t: Task, p: Priority) => Promise<void>;
 }) {
   const [showDone, setShowDone] = useState(false);
   const [mode, setMode] = useState<"list" | "week">(() => {
@@ -83,6 +89,15 @@ export default function TasksView({
         }}
       >
         <span className="tcheck" aria-hidden="true" />
+        <button
+          className={`tprio p-${t.priority ?? "none"}`}
+          title={`${PRIO_LABEL[t.priority ?? "none"]} · clic para cambiar`}
+          aria-label={`${PRIO_LABEL[t.priority ?? "none"]}. Cambiar prioridad`}
+          onClick={(e) => {
+            e.stopPropagation();
+            void onSetPriority(t, nextPriority(t.priority));
+          }}
+        />
         <div className="tmain">
           <div className="ttext">{t.text}</div>
           <div className="tmeta">
@@ -174,7 +189,9 @@ function List({ tasks, row, now }: { tasks: Task[]; row: (t: Task) => ReactEleme
     const g = groupOf(t, now);
     groups.set(g, [...(groups.get(g) ?? []), t]);
   }
-  for (const list of groups.values()) list.sort((a, b) => (a.due?.getTime() ?? 0) - (b.due?.getTime() ?? 0));
+  // Dentro de cada grupo: primero lo de prioridad alta, luego media; después por fecha
+  for (const list of groups.values())
+    list.sort((a, b) => prioRank(a) - prioRank(b) || (a.due?.getTime() ?? 0) - (b.due?.getTime() ?? 0));
   return (
     <>
       {GROUP_ORDER.filter((g) => groups.has(g)).map((g) => (
@@ -231,7 +248,7 @@ function Week({ tasks, row, now }: { tasks: Task[]; row: (t: Task, compact?: boo
         {days.map((d) => {
           const list = tasks
             .filter((t) => t.due && sameDay(t.due, d))
-            .sort((a, b) => (a.due!.getTime() - b.due!.getTime()));
+            .sort((a, b) => prioRank(a) - prioRank(b) || a.due!.getTime() - b.due!.getTime());
           const today = sameDay(d, now);
           return (
             <section key={d.toISOString()} className={`wday ${today ? "today" : ""}`}>

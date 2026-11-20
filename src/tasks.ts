@@ -8,7 +8,25 @@ export type Task = {
   done: boolean;
   due: Date | null; // fecha (y hora, si hasTime)
   hasTime: boolean;
+  priority: Priority;
 };
+
+/** Prioridad: se guarda como 🔴 / 🟡 al inicio del pendiente ("- [ ] 🔴 Examen — **fecha**"). Baja = sin marca. */
+export type Priority = "alta" | "media" | null;
+export const PRIO_MARK: Record<"alta" | "media", string> = { alta: "🔴", media: "🟡" };
+const PRIO_RE = /^\s*(🔴|🟡)\s*/u;
+/** Separa la marca de prioridad del texto del pendiente. */
+export function splitPriority(text: string): { priority: Priority; text: string } {
+  const m = text.match(PRIO_RE);
+  if (!m) return { priority: null, text };
+  return { priority: m[1] === "🔴" ? "alta" : "media", text: text.slice(m[0].length) };
+}
+/** Clic en el puntito: sin prioridad → alta → media → sin prioridad. */
+export const nextPriority = (p: Priority): Priority => (p === null ? "alta" : p === "alta" ? "media" : null);
+export const PRIO_LABEL = { alta: "Prioridad alta", media: "Prioridad media", none: "Sin prioridad" };
+const PRIO_RANK = { alta: 0, media: 1, none: 2 };
+/** Para ordenar: alta, media y luego el resto. */
+export const prioRank = (t: Task) => PRIO_RANK[t.priority ?? "none"];
 
 export type Group = "late" | "today" | "tomorrow" | "week" | "later" | "none";
 
@@ -58,7 +76,7 @@ export function parseTasks(noteId: string, md: string, now = new Date()): Task[]
   let idx = -1;
   for (const m of md.matchAll(TASK_LINE)) {
     idx++;
-    const raw = m[4].trim();
+    const { priority, text: raw } = splitPriority(m[4].trim());
     const [head, ...rest] = raw.split(" — ");
     const when = rest.join(" — ");
     const parsed = parseWhen(when || raw, now);
@@ -69,6 +87,7 @@ export function parseTasks(noteId: string, md: string, now = new Date()): Task[]
       done: m[2] !== " ",
       due: parsed?.due ?? null,
       hasTime: parsed?.hasTime ?? false,
+      priority,
     });
   }
   return out;
@@ -111,6 +130,16 @@ export function setTaskWhen(md: string, idx: number, when: string | null): strin
     if (++i !== idx) return m;
     const head = rest.split(" — ")[0].trimEnd();
     return a + c + b + (when ? `${head} — **${when}**` : head);
+  });
+}
+
+/** Cambia la prioridad del pendiente número `idx` en el Markdown. */
+export function setTaskPriority(md: string, idx: number, p: Priority): string {
+  let i = -1;
+  return md.replace(TASK_LINE, (m, a: string, c: string, b: string, rest: string) => {
+    if (++i !== idx) return m;
+    const body = splitPriority(rest.trimStart()).text;
+    return a + c + b + " " + (p ? `${PRIO_MARK[p]} ` : "") + body;
   });
 }
 

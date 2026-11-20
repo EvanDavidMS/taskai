@@ -1,0 +1,421 @@
+{
+  "_info": "Notas de prueba para la IA de TaskAI. HOY = jueves, 19 de noviembre de 2026. Los [..] son las anotaciones que agrega annotateDates() en App.tsx antes de mandar la nota. Cada caso trae lo que DEBE salir (ver evaluar.py). Son notas inventadas: el repo es público, nunca poner notas reales de Evan.",
+  "casos": [
+    {
+      "id": "planes_noche",
+      "texto": "que dia tan cansado, necesito hacer mis certificados de excel y de python, salgo del trabajo a las 9pm [9:00 PM] y llego como a las 10 [10:00 PM] y termino por fin el de python y el de excel lo hago mañana [viernes, 20 de noviembre] en la tarde con calma, y despues de acabar el de python jugar valorant con Sofi y Marco en la noche jaja",
+      "pendientes": [
+        {
+          "con": [
+            "python"
+          ],
+          "fecha": "19 de noviembre"
+        },
+        {
+          "con": [
+            "excel"
+          ],
+          "fecha": "20 de noviembre"
+        }
+      ],
+      "no_pendientes": [
+        "valorant",
+        "jugar"
+      ],
+      "debe_decir": [
+        "Sofi",
+        "Marco"
+      ],
+      "prohibido": [
+        "[Tt]ermin[eé] (el|los|mis) cert",
+        "[Ll]legu[eé] a (mi )?casa",
+        "[Ss]al[ií] del trabajo"
+      ],
+      "max_menciones": {
+        "excel": 2
+      }
+    },
+    {
+      "id": "estudio_bio",
+      "texto": "clase de bio: fotosintesis, las plantas usan luz solar co2 y agua pa hacer glucosa y sueltan oxigeno. pasa en los cloroplastos (clorofila). examen el lunes [lunes, 23 de noviembre]",
+      "pendientes": [
+        {
+          "con": [
+            "examen"
+          ],
+          "fecha": "23 de noviembre"
+        }
+      ],
+      "debe_decir": [
+        "cloroplasto",
+        "glucosa"
+      ],
+      "con_seccion": [
+        "Para entender mejor"
+      ]
+    },
+    {
+      "id": "planes_semana",
+      "texto": "ya entregue la practica de redes. falta estudiar para el parcial de mate del martes [martes, 24 de noviembre] y pagar la colegiatura antes del viernes [viernes, 20 de noviembre]. en la noche voy a cenar con mi novia",
+      "pendientes": [
+        {
+          "con": [
+            "parcial"
+          ],
+          "fecha": "24 de noviembre"
+        },
+        {
+          "con": [
+            "colegiatura"
+          ],
+          "fecha": "20 de noviembre"
+        }
+      ],
+      "no_pendientes": [
+        "cenar",
+        "cena",
+        "redes"
+      ],
+      "prohibido_en_seccion": {
+        "Mañana": [
+          "parcial"
+        ]
+      },
+      "titulo_no": [
+        "Tareas",
+        "Pendientes",
+        "Notas"
+      ]
+    },
+    {
+      "id": "trabajo_junta",
+      "texto": "junta con el cliente mañana [viernes, 20 de noviembre] a las 9 [9:00 AM], llevar la propuesta impresa. pedirle a carlos los numeros de ventas. el reporte ya lo mande ayer",
+      "pendientes": [
+        {
+          "con": [
+            "junta"
+          ],
+          "fecha": "20 de noviembre",
+          "hora": "9:00 AM"
+        }
+      ],
+      "no_pendientes": [
+        "reporte"
+      ],
+      "debe_decir": [
+        "Carlos"
+      ],
+      "prohibido": [
+        "mandaste"
+      ]
+    },
+    {
+      "id": "diario_cine",
+      "texto": "hoy sali con mi prima lucia al cine, vimos una de terror que estuvo buenisima, despues comimos tacos al pastor. me senti muy bien, hace mucho no salia",
+      "sin_pendientes": true,
+      "sin_seccion": [
+        "Para entender mejor"
+      ],
+      "debe_decir": [
+        "Lucía|Lucia"
+      ]
+    },
+    {
+      "id": "mal_escrito",
+      "texto": "mñn [viernes, 20 de noviembre] tng xamen d kimica a las 7 [7:00 AM] y no e estudiado nd, tmb entregar reporte d lab el miercoles [miércoles, 25 de noviembre] xq si no me repruevan",
+      "pendientes": [
+        {
+          "con": [
+            "examen",
+            "qu[ií]mica"
+          ],
+          "fecha": "20 de noviembre",
+          "hora": "7:00 AM"
+        },
+        {
+          "con": [
+            "reporte"
+          ],
+          "fecha": "25 de noviembre"
+        }
+      ],
+      "prohibido": [
+        "\\bxamen",
+        "kimica",
+        "repruevan"
+      ]
+    },
+    {
+      "id": "pasado_y_cita",
+      "texto": "hoy ya termine el ensayo de historia y lo entregue, tambien fui al gym. mañana [viernes, 20 de noviembre] tengo dentista a las 4 [4:00 PM]",
+      "pendientes": [
+        {
+          "con": [
+            "dentista"
+          ],
+          "fecha": "20 de noviembre",
+          "hora": "4:00 PM"
+        }
+      ],
+      "no_pendientes": [
+        "ensayo",
+        "gym",
+        "gimnasio"
+      ],
+      "prohibido": [
+        "[Tt]erminar el ensayo",
+        "[Ee]ntregar el ensayo"
+      ]
+    },
+    {
+      "id": "boda_horas",
+      "texto": "el sabado [sábado, 21 de noviembre] es la boda de mi primo a las 6 [6:00 PM], antes tengo que pasar por el regalo a las 3 [3:00 PM] y recoger el traje en la tintoreria",
+      "pendientes": [
+        {
+          "con": [
+            "boda"
+          ],
+          "fecha": "21 de noviembre",
+          "hora": "6:00 PM"
+        },
+        {
+          "con": [
+            "regalo"
+          ],
+          "fecha": "21 de noviembre",
+          "hora": "3:00 PM"
+        }
+      ]
+    },
+    {
+      "id": "redes_osi",
+      "texto": "apuntes de redes: el modelo OSI tiene 7 capas, la capa 3 es red (routers, IP) y la 2 es enlace (switches, MAC). la capa 4 transporte usa TCP y UDP. quiz el martes [martes, 24 de noviembre]",
+      "pendientes": [
+        {
+          "con": [
+            "quiz"
+          ],
+          "fecha": "24 de noviembre"
+        }
+      ],
+      "debe_decir": [
+        "OSI",
+        "TCP",
+        "UDP"
+      ],
+      "con_seccion": [
+        "Para entender mejor"
+      ]
+    },
+    {
+      "id": "deseos",
+      "texto": "ojala pueda ir a la playa en diciembre, quiero ahorrar mas y dormir mas temprano, ya me canse de desvelarme",
+      "sin_pendientes": true,
+      "sin_seccion": [
+        "Para entender mejor"
+      ]
+    },
+    {
+      "id": "programacion_tarea",
+      "texto": "progra: variables guardan datos, los bucles for repiten un numero fijo de veces y el while mientras se cumpla una condicion. funciones = bloques reutilizables. tarea hacer un programa que sume del 1 al 100 para el lunes [lunes, 23 de noviembre] #python",
+      "pendientes": [
+        {
+          "con": [
+            "programa"
+          ],
+          "fecha": "23 de noviembre"
+        }
+      ],
+      "debe_decir": [
+        "for",
+        "while"
+      ],
+      "prohibido": [
+        "#python"
+      ]
+    },
+    {
+      "id": "despues_de",
+      "texto": "el domingo [domingo, 22 de noviembre] en la mañana tengo partido de futbol a las 9 [9:00 AM] y despues del partido voy a comer con mi tio Ramiro. el lunes [lunes, 23 de noviembre] empiezo el curso de ingles a las 5 [5:00 PM]",
+      "pendientes": [
+        {
+          "con": [
+            "partido"
+          ],
+          "fecha": "22 de noviembre",
+          "hora": "9:00 AM"
+        },
+        {
+          "con": [
+            "ingl[eé]s"
+          ],
+          "fecha": "23 de noviembre",
+          "hora": "5:00 PM"
+        }
+      ],
+      "no_pendientes": [
+        "comer"
+      ],
+      "debe_decir": [
+        "Ramiro"
+      ],
+      "prohibido_en_seccion": {
+        "Lunes": [
+          "Ramiro"
+        ]
+      }
+    },
+    {
+      "id": "n_cumple",
+      "nuevo": true,
+      "texto": "el miercoles [miércoles, 25 de noviembre] es el cumple de mi mama, tengo que comprarle un pastel antes de las 6 [6:00 PM] y en la noche cenamos todos en su casa",
+      "pendientes": [
+        {
+          "con": [
+            "pastel"
+          ],
+          "fecha": "25 de noviembre"
+        }
+      ]
+    },
+    {
+      "id": "n_medico",
+      "nuevo": true,
+      "texto": "cita con el doctor el lunes [lunes, 23 de noviembre] a las 11 [11:00 AM] para lo de la espalda, llevar los estudios. me sigue doliendo bastante",
+      "pendientes": [
+        {
+          "con": [
+            "(doctor|m[eé]dico)"
+          ],
+          "fecha": "23 de noviembre",
+          "hora": "11:00 AM"
+        }
+      ],
+      "no_pendientes": [
+        "doler",
+        "dolor"
+      ]
+    },
+    {
+      "id": "n_trabajo",
+      "nuevo": true,
+      "texto": "entregar el diseño del logo al cliente el viernes [viernes, 20 de noviembre], hoy revisar los correos pendientes y el martes [martes, 24 de noviembre] llamada con Paola a las 4 [4:00 PM]",
+      "pendientes": [
+        {
+          "con": [
+            "logo"
+          ],
+          "fecha": "20 de noviembre"
+        },
+        {
+          "con": [
+            "Paola|llamada"
+          ],
+          "fecha": "24 de noviembre",
+          "hora": "4:00 PM"
+        },
+        {
+          "con": [
+            "correo"
+          ],
+          "fecha": "19 de noviembre"
+        }
+      ],
+      "debe_decir": [
+        "Paola"
+      ]
+    },
+    {
+      "id": "n_ingles",
+      "nuevo": true,
+      "texto": "ingles: past simple: los verbos regulares terminan en -ed (worked, played) y los irregulares cambian (go-went, eat-ate). tarea practicar con 10 oraciones para mañana [viernes, 20 de noviembre]",
+      "pendientes": [
+        {
+          "con": [
+            "oraciones"
+          ],
+          "fecha": "20 de noviembre"
+        }
+      ],
+      "debe_decir": [
+        "went"
+      ],
+      "con_seccion": [
+        "Para entender mejor"
+      ]
+    },
+    {
+      "id": "n_diario",
+      "nuevo": true,
+      "texto": "hoy me levante temprano, sali a correr 5 km y luego desayune con mi hermano toño. en la tarde vi una peli y me dormi temprano",
+      "sin_pendientes": true,
+      "sin_seccion": [
+        "Para entender mejor"
+      ],
+      "debe_decir": [
+        "Toño"
+      ]
+    },
+    {
+      "id": "n_metas",
+      "nuevo": true,
+      "texto": "quiero bajar de peso, ojala no me de flojera. el lunes [lunes, 23 de noviembre] me inscribo al gym y tengo que comprar tenis",
+      "pendientes": [
+        {
+          "con": [
+            "gym|gimnasio"
+          ],
+          "fecha": "23 de noviembre"
+        }
+      ],
+      "no_pendientes": [
+        "peso",
+        "flojera"
+      ]
+    },
+    {
+      "id": "urgente_calculo",
+      "texto": "URGENTE entregar la tarea de calculo mañana [viernes, 20 de noviembre] antes de las 8 [8:00 AM] porque si no repruebo. tambien comprar hojas y el sabado [sábado, 21 de noviembre] ir al cine con Vale",
+      "pendientes": [
+        {
+          "con": [
+            "c[aá]lculo"
+          ],
+          "fecha": "20 de noviembre",
+          "hora": "8:00 AM"
+        }
+      ],
+      "prioridad_alta": [
+        "c[aá]lculo"
+      ],
+      "no_pendientes": [
+        "cine"
+      ],
+      "debe_decir": [
+        "Vale"
+      ]
+    },
+    {
+      "id": "importante_pago",
+      "texto": "el lunes [lunes, 23 de noviembre] tengo junta con mi jefa a las 10 [10:00 AM]. no se me puede olvidar pagar la tarjeta el martes [martes, 24 de noviembre] porque cobran intereses. el miercoles [miércoles, 25 de noviembre] cumple de mi amigo Leo",
+      "pendientes": [
+        {
+          "con": [
+            "junta"
+          ],
+          "fecha": "23 de noviembre",
+          "hora": "10:00 AM"
+        },
+        {
+          "con": [
+            "tarjeta"
+          ],
+          "fecha": "24 de noviembre"
+        }
+      ],
+      "prioridad_alta": [
+        "tarjeta"
+      ]
+    }
+  ]
+}

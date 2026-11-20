@@ -8,7 +8,21 @@ import Onboarding from "./Onboarding";
 import { applyAccent, savedAccent } from "./accents";
 import { FolderTag, Icon, Logo, folderLook } from "./icons";
 import { listen } from "@tauri-apps/api/event";
-import { type Task, formatWhen, groupOf, parseTasks, parseWhen, setTaskWhen, whenLabel } from "./tasks";
+import {
+  PRIO_LABEL,
+  PRIO_MARK,
+  type Priority,
+  type Task,
+  formatWhen,
+  groupOf,
+  nextPriority,
+  parseTasks,
+  parseWhen,
+  setTaskPriority,
+  setTaskWhen,
+  splitPriority,
+  whenLabel,
+} from "./tasks";
 import { checkReminders } from "./reminders";
 import TasksView, { type WhenValue } from "./TasksView";
 import TrashView from "./TrashView";
@@ -17,6 +31,7 @@ import { UpdateBanner, autoUpdates, findUpdate } from "./Updater";
 import { DIARY_FOLDER, isBlankText, stripEmptyPrompts } from "./templates";
 import { doneCount, keySound, play, preloadSounds } from "./sounds";
 import { mdToText, printPdf, saveMarkdown } from "./exporter";
+import { type AiTasks, PENDING_SPLIT, mergeTasks, nextDays } from "./aiTasks";
 import "./App.css";
 
 type NoteMeta = {
@@ -125,6 +140,7 @@ function dateContext() {
   return { today: `${fmt(now)} de ${now.getFullYear()}`, tomorrow: fmt(plus(1)), calendar };
 }
 
+
 const DAYS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 const plain = (w: string) => w.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
@@ -179,7 +195,8 @@ function annotateDates(text: string) {
   out = out.replace(/[\p{L}]+/gu, (word, offset: number) => {
     const w = plain(word);
     const before = plain(out.slice(Math.max(0, offset - 12), offset));
-    if (w === "manana") {
+    // "mañana" y como se abrevia al escribir rápido: mñn, mñna (sin acentos: mnn, mnna)
+    if (w === "manana" || w === "mnn" || w === "mnna") {
       if (/(la|esta|cada|las)\s+$/.test(before)) return word; // "en la mañana", "esta mañana"
       return word + tag(full(plus(/pasado\s+$/.test(before) ? 2 : 1)));
     }
@@ -221,12 +238,23 @@ function toggleTask(md: string, idx: number) {
   return md.replace(TASK_RE, (m, a, c, b, rest) => (++i === idx ? a + (c === " " ? "x" : " ") + b + rest : m));
 }
 
-/** Al reordenar, conserva las palomitas de los pendientes que ya habías marcado. */
+/** Al reordenar, conserva las palomitas y la prioridad que el usuario les puso a los pendientes. */
 function carryChecks(oldMd: string, newMd: string) {
   const done = new Set<string>();
-  for (const m of oldMd.matchAll(TASK_RE)) if (m[2] !== " ") done.add(taskKey(m[4]));
-  if (!done.size) return newMd;
-  return newMd.replace(TASK_RE, (m, a, _c, b, rest) => (done.has(taskKey(rest)) ? a + "x" + b + rest : m));
+  const prio = new Map<string, Priority>();
+  for (const m of oldMd.matchAll(TASK_RE)) {
+    const key = taskKey(m[4]);
+    if (m[2] !== " ") done.add(key);
+    prio.set(key, splitPriority(m[4].trim()).priority);
+  }
+  if (!done.size && !prio.size) return newMd;
+  return newMd.replace(TASK_RE, (_m, a, c, b, rest: string) => {
+    const key = taskKey(rest);
+    const body = splitPriority(rest.trim()).text;
+    // La prioridad de antes manda (el usuario pudo cambiarla); si no existía, la que traiga la IA
+    const p = prio.has(key) ? prio.get(key)! : splitPriority(rest.trim()).priority;
+    return a + (done.has(key) ? "x" : c) + b + " " + (p ? `${PRIO_MARK[p]} ` : "") + body;
+  });
 }
 
 /** ¿La negrita ES una fecha u hora ("viernes, 20 de noviembre", "10:00 PM", "mañana a las 9:00 AM")?
@@ -244,10 +272,17 @@ function renderMd(md: string) {
     /(<li>\s*<input[^>]*type="checkbox"[^>]*>)([\s\S]*?)\s+—\s+<strong>([^<]+)<\/strong>\s*<\/li>/g,
     (_m, box: string, text: string, when: string) => {
       const p = parseWhen(when);
-      const t: Task | null = p ? { noteId: "", idx: 0, text: "", done: false, due: p.due, hasTime: p.hasTime } : null;
+      const t: Task | null = p ? { noteId: "", idx: 0, text: "", done: false, due: p.due, hasTime: p.hasTime, priority: null } : null;
       const label = t ? whenLabel(t) : when;
       const g = t ? groupOf(t) : "none";
       return `${box}<span class="ttext">${text.trim()}</span><span class="twhen g-${g}">${label}</span></li>`;
+    },
+  ).replace(
+    // Puntito de prioridad (🔴/🟡 al inicio del pendiente); sin prioridad sale solo al pasar el mouse
+    /(<li>\s*<input[^>]*type="checkbox"[^>]*>)(\s*<span class="ttext">)?\s*(🔴|🟡)?\s*/gu,
+    (_m, box: string, open = "", mark?: string) => {
+      const p = mark === "🔴" ? "alta" : mark === "🟡" ? "media" : "none";
+      return `${box}<span class="tprio p-${p}" title="${PRIO_LABEL[p]} · clic para cambiar"></span>${open}`;
     },
   ).replace(/<strong>([^<]+)<\/strong>/g, (_m, t: string) =>
     // Las negritas se pintan como marcatexto; fechas y horas con su propio color
@@ -818,9 +853,23 @@ export default function App() {
         setStreamText("");
         let fresh: string;
         try {
-          fresh = normalizeTimes(
-            stripNotes(await invoke<string>("ai_structure", { id, text: ann.text, model, ...dateContext() }), ann.notes),
-          );
+          const ctx = dateContext();
+          fresh = normalizeTimes(stripNotes(await invoke<string>("ai_structure", { id, text: ann.text, model, ...ctx }), ann.notes));
+          // Paso 2: los pendientes como datos. Si falla, se quedan los que escribió el modelo.
+          try {
+            const hours = [...new Set(ann.notes.filter((n) => /^\d{1,2}:\d{2} [AP]M$/.test(n)))];
+            const data = await invoke<AiTasks>("ai_tasks", {
+              text: ann.text,
+              ordered: fresh.replace(PENDING_SPLIT, "").trimEnd(),
+              model,
+              today: ctx.today,
+              days: nextDays(),
+              hours,
+            });
+            fresh = mergeTasks(fresh, data, hours, text);
+          } catch (e) {
+            console.warn("ai_tasks:", e);
+          }
         } finally {
           streamIdRef.current = null;
           setStreamText("");
@@ -939,7 +988,16 @@ export default function App() {
     if (!activeId || !(box instanceof HTMLInputElement)) return;
     if (e.target !== box) e.preventDefault();
     const all = Array.from(e.currentTarget.querySelectorAll('input[type="checkbox"]'));
-    const next = toggleTask(structured, all.indexOf(box));
+    const idx = all.indexOf(box);
+    // Clic en el puntito: cambia la prioridad (no palomea)
+    if ((e.target as HTMLElement).classList.contains("tprio")) {
+      const cur = parseTasks("", structured)[idx]?.priority ?? null;
+      const next = setTaskPriority(structured, idx, nextPriority(cur));
+      setStructured(next);
+      await putStructured(activeId, next);
+      return;
+    }
+    const next = toggleTask(structured, idx);
     if (doneCount(next) > doneCount(structured)) void play("palomita");
     setStructured(next);
     await putStructured(activeId, next);
@@ -973,6 +1031,15 @@ export default function App() {
     }
   }
 
+  /** Cambiar la prioridad desde la vista Pendientes. */
+  async function setTaskPrio(t: Task, p: Priority) {
+    const md = structMap[t.noteId];
+    if (md == null) return;
+    const next = setTaskPriority(md, t.idx, p);
+    if (t.noteId === activeId) setStructured(next);
+    await putStructured(t.noteId, next);
+  }
+
   /** Palomear desde la vista Pendientes (también si esa nota está abierta). */
   async function toggleFromList(t: Task) {
     const md = structMap[t.noteId];
@@ -988,6 +1055,8 @@ export default function App() {
     if (!streamText) return "";
     let md = streamText.replace(/^\s*```(?:markdown|md)?\s*/, "");
     md = normalizeTimes(stripNotes(md, streamNotesRef.current));
+    // Sus pendientes no se muestran mientras escribe: al final van los del paso 2 (ai_tasks)
+    md = md.replace(PENDING_SPLIT, "");
     const t = titleRef.current.trim();
     if (t) md = md.replace(/^# .*/m, `# ${t}`);
     return renderMd(md);
@@ -1322,6 +1391,7 @@ export default function App() {
                 onOpen={openNote}
                 onAdd={addTask}
                 onSetWhen={setTaskDate}
+                onSetPriority={setTaskPrio}
               />
             ) : (
               <>

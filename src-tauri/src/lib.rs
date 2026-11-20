@@ -1405,6 +1405,111 @@ async fn ai_structure(
     Ok(out.trim_matches('`').trim().to_string())
 }
 
+/// Paso 2 de la IA: los pendientes como datos (JSON con opciones cerradas). El código arma la
+/// sección "📌 Pendientes" (ver mergeTasks en App.tsx), así el modelo no puede inventar fechas u
+/// horas, copiar #etiquetas ni volver pendiente un deseo. Probado con scripts/ia (dos_pasos.py).
+const TASKS_PROMPT: &str = r###"Sacas los pendientes de unos apuntes. Hoy es {HOY}.
+Revisa CADA cosa que el usuario menciona que hará o que pasará, y para cada una decide:
+- "tipo":
+  - "compromiso": algo que TIENE que hacer o a lo que TIENE que ir: tarea, examen, quiz, entrega, cita, junta, clase, curso, pago, trámite, evento (boda, partido, presentación), pasar por algo o recogerlo.
+  - "plan_libre": algo que hará por gusto: comer, cenar, jugar, ver series, salir, descansar.
+  - "deseo": lo que quiere u ojalá pase, metas sin fecha (ahorrar, dormir temprano).
+  - "ya_hecho": lo que dice que YA hizo.
+- "tarea": corta y clara, con las palabras del usuario corregidas y con la materia si la hay ("examen de química", no "estudiar"). Sin #etiquetas. Una sola vez cada cosa: no agregues tareas que el usuario no dijo (si dice "no he estudiado", NO agregues "estudiar").
+- "dia": el día en que se hace, de la lista. Usa lo que está entre corchetes [..]: ya está calculado. "Después de X" es el mismo día que X. Si habla de hoy (hoy, ahorita, en la noche, al llegar a casa) es hoy. La "Versión ordenada" te dice en qué día quedó cada cosa. Si no hay ningún día: "sin fecha".
+- "hora": la hora entre corchetes que va con esa cosa, o "sin hora".
+- "prioridad": "alta" SOLO si el usuario dice que esa cosa es urgente o importante (urgente, importante, sin falta, no se me puede olvidar, es prioridad). Si no lo dice: "normal". No adivines.
+Además, "tipo_nota": "estudio" (apuntes de una clase o tema), "trabajo" o "personal" (diario, planes, metas, pendientes del día).
+Responde solo el JSON."###;
+
+const TASKS_EX1_IN: &str = "Apuntes:\nmañana [{MANANA}] entrego el proyecto de fisica a las 8 [8:00 AM] y no lo he terminado, en la tarde voy a jugar fut. ya hice la tarea de mate. ojala me vaya bien. llegando a mi casa hago el resumen de historia. el {D4N} [{D4}] pago la luz sin falta\n\nVersión ordenada:\n# Proyecto de física\n## Hoy en la noche\n- Hacer el **resumen de historia** al llegar a casa.\n## Mañana\n- Entregar el **proyecto de física** a las 8:00 AM.\n- En la tarde: jugar **fútbol**.\n## {D4T}\n- Pagar la **luz** sin falta.";
+const TASKS_EX1_OUT: &str = r#"{"tipo_nota": "personal", "pendientes": [{"tarea": "Entregar el proyecto de física", "tipo": "compromiso", "dia": "{MANANA}", "hora": "8:00 AM", "prioridad": "normal"}, {"tarea": "Jugar fútbol", "tipo": "plan_libre", "dia": "{MANANA}", "hora": "sin hora", "prioridad": "normal"}, {"tarea": "Tarea de matemáticas", "tipo": "ya_hecho", "dia": "sin fecha", "hora": "sin hora", "prioridad": "normal"}, {"tarea": "Que me vaya bien", "tipo": "deseo", "dia": "sin fecha", "hora": "sin hora", "prioridad": "normal"}, {"tarea": "Resumen de historia", "tipo": "compromiso", "dia": "{HOY}", "hora": "sin hora", "prioridad": "normal"}, {"tarea": "Pagar la luz", "tipo": "compromiso", "dia": "{D4}", "hora": "sin hora", "prioridad": "alta"}]}"#;
+const TASKS_EX2_IN: &str = "Apuntes:\nhistoria: la revolucion mexicana empezo en 1910 contra porfirio diaz, madero lanzo el plan de san luis. zapata pedia tierras. exposicion el {D7N} [{D7}] en equipo\n\nVersión ordenada:\n# La Revolución Mexicana\n## Inicio\n- Empezó en **1910** contra **Porfirio Díaz**.\n- **Madero** lanzó el **Plan de San Luis**.\n- **Zapata** pedía tierras.";
+const TASKS_EX2_OUT: &str = r#"{"tipo_nota": "estudio", "pendientes": [{"tarea": "Exposición de historia en equipo", "tipo": "compromiso", "dia": "{D7}", "hora": "sin hora", "prioridad": "normal"}]}"#;
+
+/// `days`: hoy y los 7 días siguientes ("jueves, 19 de noviembre", …). `hours`: las horas que
+/// annotateDates encontró en el texto ("9:00 PM"): el modelo solo puede elegir de esas.
+#[tauri::command]
+async fn ai_tasks(
+    text: String,
+    ordered: String,
+    model: String,
+    today: String,
+    days: Vec<String>,
+    hours: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    if days.len() < 8 {
+        return Err("faltan días".into());
+    }
+    let weekday = |d: &str| d.split(',').next().unwrap_or(d).trim().to_string();
+    let cap = |w: String| {
+        let mut c = w.chars();
+        c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+    };
+    let fill = |s: &str| {
+        s.replace("{HOY}", &days[0])
+            .replace("{MANANA}", &days[1])
+            .replace("{D4N}", &weekday(&days[4]))
+            .replace("{D4T}", &cap(weekday(&days[4])))
+            .replace("{D4}", &days[4])
+            .replace("{D7N}", &weekday(&days[7]))
+            .replace("{D7}", &days[7])
+    };
+    let mut hour_opts = hours.clone();
+    if !hour_opts.iter().any(|h| h == "8:00 AM") {
+        hour_opts.push("8:00 AM".into()); // la del ejemplo; si no está en el texto, mergeTasks la ignora
+    }
+    hour_opts.push("sin hora".into());
+    let mut day_opts = days.clone();
+    day_opts.push("sin fecha".into());
+    let schema = serde_json::json!({
+        "type": "object",
+        "required": ["tipo_nota", "pendientes"],
+        "properties": {
+            "tipo_nota": { "type": "string", "enum": ["estudio", "trabajo", "personal"] },
+            "pendientes": { "type": "array", "items": {
+                "type": "object",
+                "required": ["tarea", "tipo", "dia", "hora", "prioridad"],
+                "properties": {
+                    "tarea": { "type": "string" },
+                    "tipo": { "type": "string", "enum": ["compromiso", "plan_libre", "deseo", "ya_hecho"] },
+                    "dia": { "type": "string", "enum": day_opts },
+                    "hora": { "type": "string", "enum": hour_opts },
+                    "prioridad": { "type": "string", "enum": ["alta", "normal"] }
+                }
+            }}
+        }
+    });
+    let user = format!("Apuntes:\n{text}\n\nVersión ordenada:\n{ordered}");
+    let res = reqwest::Client::new()
+        .post(format!("{OLLAMA_URL}/api/chat"))
+        .json(&serde_json::json!({
+            "model": model,
+            "stream": false,
+            "format": schema,
+            "messages": [
+                { "role": "system", "content": TASKS_PROMPT.replace("{HOY}", &today) },
+                { "role": "user", "content": fill(TASKS_EX1_IN) },
+                { "role": "assistant", "content": fill(TASKS_EX1_OUT) },
+                { "role": "user", "content": fill(TASKS_EX2_IN) },
+                { "role": "assistant", "content": fill(TASKS_EX2_OUT) },
+                { "role": "user", "content": user }
+            ],
+            // Mismas opciones (y mismo num_ctx) que ai_structure: no recarga el modelo
+            "keep_alive": "30m",
+            "options": { "temperature": 0, "seed": 42, "top_k": 1, "num_ctx": 8192 }
+        }))
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|_| "OLLAMA_OFF".to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("Ollama respondió {}", res.status()));
+    }
+    let r: ChatResponse = res.json().await.map_err(|e| e.to_string())?;
+    serde_json::from_str(&r.message.content).map_err(|e| format!("JSON de pendientes inválido: {e}"))
+}
+
 /// Minúsculas y sin acentos, letra por letra (así "telefono" encuentra "Teléfono").
 /// Conserva una letra por cada letra original, para poder recortar el texto original en la misma posición.
 fn fold_char(c: char) -> char {
@@ -1756,7 +1861,8 @@ pub fn run() {
             ai_delete,
             ai_model_sizes,
             set_ai_power,
-            notify_icon
+            notify_icon,
+            ai_tasks
         ])
         .build(tauri::generate_context!())
         .expect("error al iniciar TaskAI")
