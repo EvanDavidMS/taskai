@@ -1312,6 +1312,14 @@ const EXAMPLE2_OUT: &str = "# Comida con la abuela y fútbol\n> Un día tranquil
 const EXAMPLE3_IN: &str = "hoy fue un dia pesado, tengo que hacer mis tareas de quimica y de historia. salgo del trabajo a las 8pm [8:00 PM], llego a mi casa como a las 9 [9:00 PM] y hago por fin la de quimica y la de historia la hago mañana [{MANANA}] en la tarde con calma. y despues de terminar la de quimica ver un capitulo de mi serie en la noche jaja.";
 const EXAMPLE3_OUT: &str = "# Tareas de química e historia\n> Día pesado: hoy en la noche toca la tarea de **química** y mañana en la tarde la de **historia**.\n\n## Hoy en la noche\n- Salir del trabajo a las 8:00 PM y llegar a casa como a las 9:00 PM.\n- Hacer la **tarea de química**.\n- Después de la tarea de química: ver un capítulo de mi **serie**.\n\n## Mañana en la tarde\n- Hacer la **tarea de historia** con calma.\n\n## 📌 Pendientes\n- [ ] Hacer la tarea de química — **{HOY}, 9:00 PM**\n- [ ] Hacer la tarea de historia — **{MANANA}**";
 
+/// A partir de cuántas palabras una nota cuenta como "larga" (ver EXAMPLE4).
+const LONG_NOTE_WORDS: usize = 120;
+
+/// Cuarto ejemplo: apuntes largos de estudio (causas, contrastes, conclusión). Enseña que ordenar
+/// NO es resumir: oraciones completas con su porqué, todos los datos y la conclusión, sin pendientes.
+const EXAMPLE4_IN: &str = "caida del muro de berlin (1989). el muro dividia berlin desde 1961, lo construyo la RDA (alemania comunista) para que su gente no se fuera al oeste. por que cayo: la economia de la RDA estaba quebrada, en hungria abrieron la frontera y miles escaparon por ahi, y habia marchas cada lunes en leipzig. el 9 de noviembre un vocero, Gunter Schabowski, anuncio por error en la tele que ya se podia cruzar \"de inmediato\", la gente llego en masa y los guardias abrieron. consecuencias: alemania se reunifico en 1990 y en 1991 se disolvio la urss. pero la reunificacion costo mucho y el este se quedo mas pobre por años. conclusion del profe: no cayo por una sola persona sino porque el sistema ya no aguantaba";
+const EXAMPLE4_OUT: &str = "# La caída del Muro de Berlín\n> En 1989 cayó el **Muro de Berlín** porque la RDA ya no se sostenía, y eso llevó a la **reunificación** de Alemania.\n\n## El muro\n- Dividió Berlín desde **1961**; lo construyó la **RDA** (la Alemania comunista) para que su gente no huyera al oeste.\n\n## Por qué cayó\n- La economía de la RDA estaba **quebrada**.\n- **Hungría** abrió su frontera y miles de personas escaparon por ahí.\n- Cada lunes había **marchas** en Leipzig.\n- El 9 de noviembre, el vocero **Günter Schabowski** anunció por error en la televisión que ya se podía cruzar \"de inmediato\"; la gente llegó en masa y los guardias abrieron.\n\n## Consecuencias\n- Alemania se **reunificó** en 1990 y la **URSS** se disolvió en 1991.\n- Pero la reunificación costó mucho y el este siguió **más pobre** durante años.\n- Conclusión: no cayó por una sola persona, sino porque **el sistema ya no aguantaba**.\n\n## 💡 Para entender mejor\n- La **RDA** era Alemania del Este, aliada de la URSS; la del oeste era la RFA.\n- La **Guerra Fría** fue la rivalidad entre EE. UU. y la URSS; el muro era su símbolo.";
+
 #[derive(Deserialize)]
 struct ChatResponse {
     message: ChatMessage,
@@ -1353,22 +1361,30 @@ async fn ai_structure(
     let example_out = EXAMPLE_OUT.replace("{MANANA}", &tomorrow);
     // "jueves, 19 de noviembre de 2026" → "jueves, 19 de noviembre" (como viene {MANANA})
     let hoy = today.rsplit_once(" de ").map(|(a, _)| a).unwrap_or(&today);
+    let ex = |role: &str, content: String| serde_json::json!({ "role": role, "content": content });
+    let mut messages = vec![
+        ex("system", system),
+        ex("user", EXAMPLE_IN.to_string()),
+        ex("assistant", example_out),
+        ex("user", EXAMPLE2_IN.replace("{MANANA}", &tomorrow)),
+        ex("assistant", EXAMPLE2_OUT.replace("{MANANA}", &tomorrow)),
+    ];
+    // Notas largas: un ejemplo de apuntes largos (ordenar ≠ resumir). Solo en esas: en las cortas
+    // movía otros resultados (medido con scripts/ia).
+    if text.split_whitespace().count() > LONG_NOTE_WORDS {
+        messages.push(ex("user", EXAMPLE4_IN.to_string()));
+        messages.push(ex("assistant", EXAMPLE4_OUT.to_string()));
+    }
+    messages.push(ex("user", EXAMPLE3_IN.replace("{MANANA}", &tomorrow)));
+    messages.push(ex("assistant", EXAMPLE3_OUT.replace("{MANANA}", &tomorrow).replace("{HOY}", hoy)));
+    messages.push(ex("user", text.clone()));
     let client = reqwest::Client::new();
     let mut res = client
         .post(format!("{OLLAMA_URL}/api/chat"))
         .json(&serde_json::json!({
             "model": model,
             "stream": true,
-            "messages": [
-                { "role": "system", "content": system },
-                { "role": "user", "content": EXAMPLE_IN },
-                { "role": "assistant", "content": example_out },
-                { "role": "user", "content": EXAMPLE2_IN.replace("{MANANA}", &tomorrow) },
-                { "role": "assistant", "content": EXAMPLE2_OUT.replace("{MANANA}", &tomorrow) },
-                { "role": "user", "content": EXAMPLE3_IN.replace("{MANANA}", &tomorrow) },
-                { "role": "assistant", "content": EXAMPLE3_OUT.replace("{MANANA}", &tomorrow).replace("{HOY}", hoy) },
-                { "role": "user", "content": text }
-            ],
+            "messages": messages,
             // temperatura 0 + semilla fija = misma nota, mismo resultado.
             // num_ctx debe ser igual en ai_classify: si cambia, Ollama recarga el modelo.
             "keep_alive": "30m",
@@ -1426,6 +1442,10 @@ const TASKS_EX1_IN: &str = "Apuntes:\nmañana [{MANANA}] entrego el proyecto de 
 const TASKS_EX1_OUT: &str = r#"{"tipo_nota": "personal", "pendientes": [{"tarea": "Entregar el proyecto de física", "tipo": "compromiso", "dia": "{MANANA}", "hora": "8:00 AM", "prioridad": "normal"}, {"tarea": "Jugar fútbol", "tipo": "plan_libre", "dia": "{MANANA}", "hora": "sin hora", "prioridad": "normal"}, {"tarea": "Tarea de matemáticas", "tipo": "ya_hecho", "dia": "sin fecha", "hora": "sin hora", "prioridad": "normal"}, {"tarea": "Que me vaya bien", "tipo": "deseo", "dia": "sin fecha", "hora": "sin hora", "prioridad": "normal"}, {"tarea": "Resumen de historia", "tipo": "compromiso", "dia": "{HOY}", "hora": "sin hora", "prioridad": "normal"}, {"tarea": "Pagar la luz", "tipo": "compromiso", "dia": "{D4}", "hora": "sin hora", "prioridad": "alta"}]}"#;
 const TASKS_EX2_IN: &str = "Apuntes:\nhistoria: la revolucion mexicana empezo en 1910 contra porfirio diaz, madero lanzo el plan de san luis. zapata pedia tierras. exposicion el {D7N} [{D7}] en equipo\n\nVersión ordenada:\n# La Revolución Mexicana\n## Inicio\n- Empezó en **1910** contra **Porfirio Díaz**.\n- **Madero** lanzó el **Plan de San Luis**.\n- **Zapata** pedía tierras.";
 const TASKS_EX2_OUT: &str = r#"{"tipo_nota": "estudio", "pendientes": [{"tarea": "Exposición de historia en equipo", "tipo": "compromiso", "dia": "{D7}", "hora": "sin hora", "prioridad": "normal"}]}"#;
+
+/// Apuntes de un tema (documental, clase) sin nada que hacer: el tema NO es un pendiente.
+const TASKS_EX3_IN: &str = "Apuntes:\n\"Cosmos\" (2014), serie documental con Neil deGrasse Tyson. explica el big bang, como se forman las estrellas y por que somos polvo de estrellas. lo que mas me gusto: el calendario cosmico, donde toda la historia del universo cabe en un año y los humanos aparecemos el 31 de diciembre\n\nVersión ordenada:\n# Cosmos: el universo en un año\n## De qué trata\n- Explica el **big bang** y cómo se forman las **estrellas**.";
+const TASKS_EX3_OUT: &str = r#"{"tipo_nota": "estudio", "pendientes": []}"#;
 
 /// `days`: hoy y los 7 días siguientes ("jueves, 19 de noviembre", …). `hours`: las horas que
 /// annotateDates encontró en el texto ("9:00 PM"): el modelo solo puede elegir de esas.
@@ -1493,6 +1513,8 @@ async fn ai_tasks(
                 { "role": "assistant", "content": fill(TASKS_EX1_OUT) },
                 { "role": "user", "content": fill(TASKS_EX2_IN) },
                 { "role": "assistant", "content": fill(TASKS_EX2_OUT) },
+                { "role": "user", "content": TASKS_EX3_IN },
+                { "role": "assistant", "content": TASKS_EX3_OUT },
                 { "role": "user", "content": user }
             ],
             // Mismas opciones (y mismo num_ctx) que ai_structure: no recarga el modelo

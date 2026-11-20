@@ -37,7 +37,10 @@ def constante(src, nombre):
 def mensajes(src, texto):
     llenar = lambda s: s.replace("{MANANA}", MANANA).replace("{HOY}", HOY_CORTO)
     msgs = [{"role": "system", "content": constante(src, "SYSTEM_PROMPT").replace("{HOY}", HOY).replace("{CALENDARIO}", CAL)}]
-    for i in ["", "2", "3", "4", "5", "6"]:
+    # Mismo orden que ai_structure (lib.rs): 1, 2, [4 solo si la nota es larga], 3
+    largo = int(re.search(r"const LONG_NOTE_WORDS: usize = (\d+);", src).group(1))
+    orden = ["", "2"] + (["4"] if len(texto.split()) > largo else []) + ["3"]
+    for i in orden:
         ein, eout = constante(src, f"EXAMPLE{i}_IN"), constante(src, f"EXAMPLE{i}_OUT")
         if ein and eout:
             msgs += [{"role": "user", "content": llenar(ein)}, {"role": "assistant", "content": llenar(eout)}]
@@ -120,6 +123,8 @@ def revisar(caso, md):
     for w in caso.get("no_pendientes", []):
         if re.search(r"\b" + w + r"\b", pend_txt, re.I):
             fallas.append(f"'{w}' no debería ser pendiente")
+    if "max_pendientes" in caso and len(pend) > caso["max_pendientes"]:
+        fallas.append(f"sobran pendientes ({len(pend)}): {[p.strip() for p in pend]}")
     if caso.get("sin_pendientes") and pend:
         fallas.append(f"no debería tener pendientes ({len(pend)})")
 
@@ -174,12 +179,13 @@ def main():
     ap.add_argument("-g", "--guardar", help="guardar respuestas en este .json")
     ap.add_argument("--lib", default=str(LIB), help="lib.rs a usar (para comparar versiones)")
     ap.add_argument("--hoy", action="store_true", help="anotar también 'hoy [fecha]'")
+    ap.add_argument("--casos", default=str(CASOS), help="otro archivo de casos (p. ej. notas reales que NO van al repo)")
     a = ap.parse_args()
 
     global ANOTAR_HOY
     ANOTAR_HOY = a.hoy
     src = Path(a.lib).read_text(encoding="utf-8")
-    casos = json.loads(CASOS.read_text(encoding="utf-8"))["casos"]
+    casos = json.loads(Path(a.casos).read_text(encoding="utf-8"))["casos"]
     if a.caso:
         casos = [c for c in casos if c["id"] in a.caso]
 

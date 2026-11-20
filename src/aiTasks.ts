@@ -53,7 +53,16 @@ export function mergeTasks(md: string, data: AiTasks, hours: string[], text = ""
   // si no saldrían repetidas en la vista Pendientes
   let body = md.replace(PENDING_SPLIT, "").trimEnd().replace(/^(\s*[-*+]\s+)\[[ xX]\]\s*/gm, "$1");
   if (data.tipo_nota === "personal") body = body.replace(/\n##\s*💡[^\n]*\n(?:(?!\n## )[\s\S])*/, "").trimEnd();
-  const compromisos = data.pendientes.filter((p) => p.tipo === "compromiso");
+  // Un "pendiente" sin fecha que es el mismo tema de la nota (título "Fotosíntesis" → "Fotosíntesis",
+  // "Ver The Great Hack") no es pendiente: es de qué tratan los apuntes.
+  const topic = fold(body.match(/^# (.+)$/m)?.[1] ?? "");
+  const isTopic = (p: AiTasks["pendientes"][number]) => {
+    const t = fold(p.tarea)
+      .replace(/^(apuntes|notas|resumen) (sobre|de|del) /, "")
+      .replace(/^(ver|leer|estudiar|repasar) (el |la |los |las )?(documental |pelicula |serie |libro )?/, "");
+    return p.dia === "sin fecha" && !!topic && !!t && (topic.includes(t) || t.includes(topic));
+  };
+  const compromisos = data.pendientes.filter((p) => p.tipo === "compromiso" && !isTopic(p));
   const names = new Set(compromisos.map((p) => fold(p.tarea)));
   const seen = new Set<string>();
   const lines: string[] = [];

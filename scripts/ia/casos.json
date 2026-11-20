@@ -52,7 +52,8 @@
       ],
       "con_seccion": [
         "Para entender mejor"
-      ]
+      ],
+      "max_pendientes": 1
     },
     {
       "id": "planes_semana",
@@ -107,7 +108,8 @@
       ],
       "prohibido": [
         "mandaste"
-      ]
+      ],
+      "max_pendientes": 3
     },
     {
       "id": "diario_cine",
@@ -205,7 +207,8 @@
       ],
       "con_seccion": [
         "Para entender mejor"
-      ]
+      ],
+      "max_pendientes": 1
     },
     {
       "id": "deseos",
@@ -232,7 +235,8 @@
       ],
       "prohibido": [
         "#python"
-      ]
+      ],
+      "max_pendientes": 1
     },
     {
       "id": "despues_de",
@@ -342,7 +346,8 @@
       ],
       "con_seccion": [
         "Para entender mejor"
-      ]
+      ],
+      "max_pendientes": 1
     },
     {
       "id": "n_diario",
@@ -415,6 +420,28 @@
       ],
       "prioridad_alta": [
         "tarjeta"
+      ]
+    },
+    {
+      "id": "largo_documental",
+      "texto": "\"El dilema de las redes sociales\" (The Social Dilemma), documental de Netflix de 2020.\nDe qué trata: exempleados de Google, Facebook, Twitter e Instagram explican cómo las redes están diseñadas para captar nuestra atención el mayor tiempo posible. El negocio no es la app sino nosotros: venden nuestra atención a los anunciantes, por eso dicen que si no pagas por el producto, el producto eres tú.\nQué quiere demostrar: que los algoritmos de recomendación aprenden qué te engancha y te muestran cada vez más de eso, lo que causa adicción, ansiedad y depresión, sobre todo en adolescentes. Además polarizan a la sociedad porque cada quien ve una versión distinta de la realidad y las noticias falsas se esparcen 6 veces más rápido que las verdaderas.\nQuiénes salen: Tristan Harris, exdiseñador ético de Google, que es la voz principal. Tim Kendall, expresidente de Pinterest, que admite que ni él podía dejar el celular. Jaron Lanier, que recomienda borrar tus cuentas.\nCómo termina: no hay un final feliz. Los entrevistados piden regulación y que las empresas cambien su modelo de negocio, y dan consejos como apagar las notificaciones y no dejar que el algoritmo te recomiende videos. El mensaje final es que la tecnología no es mala en sí, el problema es un modelo de negocio que gana más mientras más te manipula.",
+      "sin_pendientes": true,
+      "con_seccion": [
+        "Para entender mejor"
+      ],
+      "debe_decir": [
+        "anunciantes",
+        "el producto eres t[uú]",
+        "adicci[oó]n",
+        "adolescentes",
+        "polariz",
+        "6 veces",
+        "Tristan Harris",
+        "Kendall",
+        "Lanier",
+        "regulaci[oó]n",
+        "notificaciones",
+        "no es mala"
       ]
     }
   ]

@@ -2,7 +2,7 @@
 
 > Para la próxima sesión de Claude Code: lee esto completo y luego [`CLAUDE.md`](CLAUDE.md).
 > Última actualización: **19 de noviembre de 2026 (noche)**, desde la **laptop de Evan (EndeavourOS/Arch + Hyprland/Quickshell, pantalla al 133 %)**. Antes se trabajaba en la PC de escritorio (**Windows 11, RTX 3060 12 GB, 16 GB RAM**).
-> Versión publicada: **v1.5.0** (Windows + Linux, compilada en GitHub Actions) (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
+> Versión publicada: **v1.5.1** (Windows + Linux, compilada en GitHub Actions) (se actualiza sola desde la 1.3.0+) · repo **público** · descarga: <https://github.com/EvanDavidMS/taskai/releases/latest>
 
 > ⚠ **19 nov (noche): se reescribió el historial de `main` y de las etiquetas** para quitar la línea `Co-Authored-By: Claude` de todos los commits (Evan no quiere que el repo muestre a Claude como contribuidor). **En la compu de Windows, antes de trabajar:** `git fetch --all --tags --force` y `git reset --hard origin/main` (si hay cambios sin subir, guardarlos antes). Respaldo del historial viejo en la laptop: `~/respaldos/taskai-antes-de-reescribir-2026-11-19.bundle`.
 
@@ -219,7 +219,15 @@ Primero, lo de la sección 3 ("Falta confirmar"). Después, en orden de impacto:
   - *`annotateDates`:* "mñn"/"mñna" cuentan como "mañana".
   - *Probado y descartado:* anotar también "hoy [fecha]" (arregla "hoy revisar los correos" pero vuelve pendientes un diario en pasado).
 
-**Siguiente: seguir mejorando la IA** — lo que queda al probar la 1.5.0:
+- **v1.5.1 (19 nov), notas largas sin perder contexto:** Evan vio que en notas largas (resumen de un documental, ~300 palabras) la IA lo dejaba todo telegráfico ("**Concepto**: frase corta") y perdía conclusiones, causas y contrastes ("pero su modelo de negocio sigue igual", "el problema es un sistema…"), además de inventar el pendiente "Ver el documental".
+  - *Reglas no sirvieron* (empeoró 17→15). Lo que sí: **`EXAMPLE4`** (apuntes largos de historia, la caída del Muro de Berlín: oraciones completas, causas, "pero…", conclusión, 💡) **solo si la nota tiene más de `LONG_NOTE_WORDS` (120) palabras**; en notas cortas movía otros resultados. Orden: 1, 2, [4], 3 (el de planes siempre al final). `evaluar.py` imita esa regla.
+  - *Pendientes:* `TASKS_EX3` (apuntes de un documental → `pendientes: []`) y en `mergeTasks` `isTopic`: un pendiente sin fecha que es el mismo tema del título ("Fotosíntesis", "Ver …", "Apuntes sobre …") se descarta.
+  - *Resultado:* nota real de Evan: de 7 datos clave perdidos a 2, sin pendiente inventado, con 💡. Banco: 16/21 (las cortas igual que antes).
+  - *Ojo, ruido:* el banco varía ±1–2 notas entre corridas (Ollama reaprovecha el caché de la consulta anterior): la 1.5.0 publicada falló `planes_semana` en una corrida y la pasó en otra. Para decidir, comparar tendencias y correr dos veces lo dudoso.
+  - *`--casos archivo.json`* en `evaluar.py`/`dos_pasos.py`: probar notas reales de Evan sin meterlas al repo (dejarlas en un archivo fuera de `scripts/`).
+
+**Siguiente: seguir mejorando la IA** — lo que queda al probar la 1.5.1:
+- Notas largas: todavía pierde algún porqué ("demanda **para recuperar sus datos**") y suaviza matices ("qué tanto fue cómplice" → "la duda de su participación"); sigue usando "**Etiqueta**: …" en vez de oraciones.
 - Títulos de más de 6 palabras ("Tarea urgente y planes para el fin de semana").
 - "hoy revisar los correos" a veces no sale como pendiente (o sale sin fecha).
 - Lo que se vio en la 1.4.5 (sigue valiendo para el paso 1):

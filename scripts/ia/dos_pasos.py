@@ -49,6 +49,8 @@ def extraer(modelo, texto, ordenada, src):
         {"role": "assistant", "content": llenar(re.search(r'const TASKS_EX1_OUT: &str = r#"(.*?)"#;', src, re.S).group(1), DIAS)},
         {"role": "user", "content": llenar(k("TASKS_EX2_IN"), DIAS)},
         {"role": "assistant", "content": llenar(re.search(r'const TASKS_EX2_OUT: &str = r#"(.*?)"#;', src, re.S).group(1), DIAS)},
+        {"role": "user", "content": k("TASKS_EX3_IN")},
+        {"role": "assistant", "content": re.search(r'const TASKS_EX3_OUT: &str = r#"(.*?)"#;', src, re.S).group(1)},
         {"role": "user", "content": f"Apuntes:\n{texto}\n\nVersión ordenada:\n{ordenada}"},
     ]
     body = json.dumps({"model": modelo, "stream": False, "messages": msgs, "keep_alive": "30m",
@@ -71,11 +73,12 @@ def main():
     ap.add_argument("-c", "--caso", action="append")
     ap.add_argument("-v", "--ver", action="store_true")
     ap.add_argument("--hoy", action="store_true", help="anotar también 'hoy [fecha]'")
+    ap.add_argument("--casos", default=str(ev.CASOS), help="otro archivo de casos (p. ej. notas reales que NO van al repo)")
     ap.add_argument("-r", "--respuestas", help="reusar las notas (paso 1) ya guardadas con evaluar.py -g")
     a = ap.parse_args()
     ev.ANOTAR_HOY = a.hoy
     src = ev.LIB.read_text(encoding="utf-8")
-    casos = json.loads(ev.CASOS.read_text(encoding="utf-8"))["casos"]
+    casos = json.loads(Path(a.casos).read_text(encoding="utf-8"))["casos"]
     if a.caso:
         casos = [c for c in casos if c["id"] in a.caso]
     previas = json.loads(Path(a.respuestas).read_text()) if a.respuestas else {}
